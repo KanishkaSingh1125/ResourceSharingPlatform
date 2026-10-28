@@ -3,7 +3,7 @@ import { MapPin, ShieldCheck, Clock, ArrowRight } from 'lucide-react'
 import { Badge, type BadgeVariant } from './Badge'
 import { Button } from './Button'
 
-export type ResourceAvailability = 'available' | 'in_use' | 'maintenance' | 'reserved'
+export type ResourceAvailability = 'available' | 'in_use' | 'maintenance' | 'reserved' | 'unavailable'
 export type ResourceAccessLevel = 'open' | 'members_only' | 'approval_required'
 
 export interface ResourceCardProps {
@@ -31,6 +31,7 @@ const statusBadgeConfig: Record<
   in_use: { label: 'In Use', variant: 'warning' },
   maintenance: { label: 'Maintenance', variant: 'error' },
   reserved: { label: 'Reserved', variant: 'default' },
+  unavailable: { label: 'Unavailable', variant: 'error' },
 }
 
 const accessLevelLabels: Record<ResourceAccessLevel, string> = {

@@ -572,3 +572,136 @@ export async function updateOrganisationProfile(
   return updatedOrg
 }
 
+
+import { type OrganisationMembership } from '@/types/profile'
+import { type UserRole } from '@/types/navigation'
+
+const STORAGE_KEY_MEMBERSHIPS = 'sharesphere_memberships_v1'
+
+const SEED_MEMBERSHIPS: Record<string, OrganisationMembership[]> = {
+  'org-mit-nanotech-01': [
+    {
+      id: 'mem-1',
+      organisationId: 'org-mit-nanotech-01',
+      organisationName: 'MIT Nanotech Core Lab',
+      userId: 'usr-turing-01',
+      role: 'org_admin',
+      status: 'active',
+      joinedAt: '2026-09-12T08:20:00Z',
+    },
+    {
+      id: 'mem-2',
+      organisationId: 'org-mit-nanotech-01',
+      organisationName: 'MIT Nanotech Core Lab',
+      userId: 'usr-vance-02',
+      role: 'manager',
+      status: 'active',
+      joinedAt: '2026-09-13T10:00:00Z',
+    },
+    {
+      id: 'mem-3',
+      organisationId: 'org-mit-nanotech-01',
+      organisationName: 'MIT Nanotech Core Lab',
+      userId: 'usr-connor-03',
+      role: 'member',
+      status: 'active',
+      joinedAt: '2026-09-15T12:00:00Z',
+    },
+  ],
+}
+
+function getStoredMemberships(): Record<string, OrganisationMembership[]> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_MEMBERSHIPS)
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEY_MEMBERSHIPS, JSON.stringify(SEED_MEMBERSHIPS))
+      return SEED_MEMBERSHIPS
+    }
+    return JSON.parse(raw)
+  } catch (err) {
+    console.error('Failed to load memberships', err)
+    return SEED_MEMBERSHIPS
+  }
+}
+
+function saveStoredMemberships(data: Record<string, OrganisationMembership[]>) {
+  try {
+    localStorage.setItem(STORAGE_KEY_MEMBERSHIPS, JSON.stringify(data))
+  } catch (err) {
+    console.error('Failed to save memberships', err)
+  }
+}
+
+export async function getOrganisationMembers(orgId: string): Promise<OrganisationMembership[]> {
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('organisation_memberships')
+        .select('*')
+        .eq('organisation_id', orgId)
+
+      if (!error && data) {
+        return data.map((d) => ({
+          id: d.id,
+          organisationId: d.organisation_id,
+          organisationName: 'Member Org',
+          userId: d.user_id,
+          role: (d.role as UserRole) || 'member',
+          status: (d.status as 'active' | 'invited' | 'suspended') || 'active',
+          joinedAt: d.joined_at,
+        }))
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  const store = getStoredMemberships()
+  return store[orgId] || []
+}
+
+export async function addOrganisationMember(
+  orgId: string,
+  input: { userId: string; role: UserRole; organisationName?: string }
+): Promise<OrganisationMembership> {
+  const newMember: OrganisationMembership = {
+    id: `mem-${Date.now()}`,
+    organisationId: orgId,
+    organisationName: input.organisationName || 'Organisation',
+    userId: input.userId,
+    role: input.role,
+    status: 'active',
+    joinedAt: new Date().toISOString(),
+  }
+
+  const store = getStoredMemberships()
+  const existing = store[orgId] || []
+  store[orgId] = [...existing, newMember]
+  saveStoredMemberships(store)
+
+  return newMember
+}
+
+export async function updateMemberRole(
+  orgId: string,
+  membershipId: string,
+  newRole: UserRole
+): Promise<OrganisationMembership | null> {
+  const store = getStoredMemberships()
+  const list = store[orgId] || []
+  let updatedMember: OrganisationMembership | null = null
+
+  store[orgId] = list.map((m) => {
+    if (m.id === membershipId) {
+      updatedMember = { ...m, role: newRole }
+      return updatedMember
+    }
+    return m
+  })
+
+  if (updatedMember) {
+    saveStoredMemberships(store)
+  }
+
+  return updatedMember
+}

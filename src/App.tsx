@@ -18,6 +18,7 @@ import {
 import {
   DashboardOverview,
   DiscoverPage,
+  ResourceDetailPage,
   MyBookingsPage,
   MyRequestsPage,
   NotificationsPage,
@@ -73,6 +74,7 @@ export function App() {
       <Route path="dashboard" element={<DashboardLayout />}>
         <Route index element={<DashboardOverview />} />
         <Route path="discover" element={<DiscoverPage />} />
+        <Route path="resources/:id" element={<ResourceDetailPage />} />
         <Route path="bookings" element={<MyBookingsPage />} />
         <Route path="requests" element={<MyRequestsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
