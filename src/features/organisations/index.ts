@@ -1,10 +1,21 @@
 /**
  * features/organisations/index.ts
- * Future home for organisation-related hooks, services, and slice logic.
- *
- * Suggested contents when you start building:
- *   - useOrganisations()   — fetch list of approved orgs
- *   - useOrganisation(id)  — fetch a single org
- *   - organisationService  — CRUD via Supabase
+ * Organisation management: CRUD, membership, verification.
  */
-export {}
+export {
+  createOrganisation,
+  getOrganisation,
+  getOrganisationBySlug,
+  updateOrganisation,
+  listOrganisations,
+  getMyOrganisations,
+  getOrgMembers,
+  inviteMember,
+  updateMemberRole,
+  removeMember,
+  transitionVerificationStatus,
+  getVerificationHistory,
+  uploadVerificationDocument,
+  getVerificationDocuments,
+  deleteVerificationDocument,
+} from './organisationService'

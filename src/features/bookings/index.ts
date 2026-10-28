@@ -1,10 +1,26 @@
 /**
  * features/bookings/index.ts
- * Future home for booking-related hooks, services, and slice logic.
- *
- * Suggested contents when you start building:
- *   - useMyBookings()       — fetch current user's bookings
- *   - useBooking(id)        — fetch a single booking
- *   - bookingService        — create / cancel / approve via Supabase
+ * Transactional booking engine: create, transition, query, checkin, reports.
  */
-export {}
+export {
+  createBooking,
+  transitionBookingStatus,
+  confirmBooking,
+  rejectBooking,
+  cancelBooking,
+  requestReschedule,
+  completeBooking,
+  markNoShow,
+  getBooking,
+  getMyBookings,
+  getResourceBookings,
+  getOrgPendingBookings,
+  getBookingHistory,
+  joinWaitingList,
+  leaveWaitingList,
+  getMyWaitingList,
+  recordCheckin,
+  getCheckinEvents,
+  submitConditionReport,
+  getConditionReports,
+} from './bookingService'

@@ -1,10 +1,17 @@
 /**
  * features/resources/index.ts
- * Future home for resource-related hooks, services, and slice logic.
- *
- * Suggested contents when you start building:
- *   - useResources(filters) — fetch paginated resource list
- *   - useResource(id)       — fetch a single resource
- *   - resourceService       — CRUD via Supabase
+ * Resource catalogue: CRUD, search, availability, maintenance.
  */
-export {}
+export {
+  getCategories,
+  createResource,
+  getResource,
+  updateResource,
+  searchResources,
+  getOrgResources,
+  getAvailability,
+  setAvailability,
+  getMaintenanceBlocks,
+  createMaintenanceBlock,
+  deleteMaintenanceBlock,
+} from './resourceService'
