@@ -1,0 +1,10 @@
+-- supabase/migrations/.gitkeep
+-- This folder holds Supabase database migration files.
+-- Migrations are created with: supabase migration new <name>
+-- Applied locally with:        supabase db reset
+-- Applied remotely with:       supabase db push
+--
+-- Example migration filenames:
+--   20250101000000_create_organisations.sql
+--   20250102000000_create_resources.sql
+--   20250103000000_create_bookings.sql
