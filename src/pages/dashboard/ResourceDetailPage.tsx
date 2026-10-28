@@ -5,7 +5,6 @@ import {
   ShieldCheck,
   Calendar,
   CheckCircle2,
-  XCircle,
   AlertTriangle,
   Building2,
   Lock,
@@ -30,7 +29,6 @@ import {
 import { BookingModal } from '@/components/booking/BookingModal'
 import { getResourceById, getResources } from '@/services/resourceService'
 import { checkUserResourceEligibility } from '@/services/eligibilityService'
-import { checkResourceAvailability } from '@/services/bookingService'
 import { getCurrentProfile } from '@/services/authService'
 import { type Resource } from '@/types/resource'
 import { type EligibilityCheckResult } from '@/types/eligibility'
@@ -55,10 +53,6 @@ export function ResourceDetailPage() {
   const [selectedDate, setSelectedDate] = useState(() =>
     new Date(Date.now() + 86400000).toISOString().split('T')[0]
   )
-  const [selectedStartTime, setSelectedStartTime] = useState('09:00')
-  const [selectedEndTime, setSelectedEndTime] = useState('13:00')
-  const [slotAvailability, setSlotAvailability] = useState<{ isAvailable: boolean; conflictReason?: string } | null>(null)
-  const [checkingSlot, setCheckingSlot] = useState(false)
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
 
   useEffect(() => {
@@ -120,30 +114,6 @@ export function ResourceDetailPage() {
       isMounted = false
     }
   }, [id])
-
-  // Check slot availability whenever date or times change
-  useEffect(() => {
-    let isMounted = true
-    if (!resource || !selectedDate || !selectedStartTime || !selectedEndTime) return
-
-    const startISO = `${selectedDate}T${selectedStartTime}:00`
-    const endISO = `${selectedDate}T${selectedEndTime}:00`
-
-    checkResourceAvailability(resource.id, startISO, endISO)
-      .then((res) => {
-        if (isMounted) {
-          setSlotAvailability(res)
-          setCheckingSlot(false)
-        }
-      })
-      .catch(() => {
-        if (isMounted) setCheckingSlot(false)
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [resource, selectedDate, selectedStartTime, selectedEndTime])
 
   const handleShareLink = () => {
     navigator.clipboard?.writeText(window.location.href)
@@ -536,42 +506,8 @@ export function ResourceDetailPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block font-medium text-neutral-700 mb-1">Start Time</label>
-                    <input
-                      type="time"
-                      value={selectedStartTime}
-                      onChange={(e) => setSelectedStartTime(e.target.value)}
-                      className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-medium text-neutral-700 mb-1">End Time</label>
-                    <input
-                      type="time"
-                      value={selectedEndTime}
-                      onChange={(e) => setSelectedEndTime(e.target.value)}
-                      className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900"
-                    />
-                  </div>
-                </div>
-
-                {/* Real-time slot status indicator */}
                 <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-200 text-[11px]">
-                  {checkingSlot ? (
-                    <span className="text-neutral-500">Checking schedule...</span>
-                  ) : slotAvailability?.isAvailable ? (
-                    <span className="text-emerald-700 font-medium flex items-center gap-1.5">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                      Selected time window is open.
-                    </span>
-                  ) : (
-                    <span className="text-red-700 font-medium flex items-center gap-1.5">
-                      <XCircle className="h-3.5 w-3.5 text-red-600" />
-                      {slotAvailability?.conflictReason || 'Slot unavailable.'}
-                    </span>
-                  )}
+                  Available times are loaded from the backend after you choose a date and duration.
                 </div>
 
                 <Button
@@ -581,18 +517,16 @@ export function ResourceDetailPage() {
                     !isAvailable ||
                     checkingEligibility ||
                     eligibility === null ||
-                    !eligibility.isEligible ||
-                    checkingSlot ||
-                    slotAvailability?.isAvailable !== true
+                    !eligibility.isEligible
                   }
                   onClick={() => setIsBookingModalOpen(true)}
                 >
                   <Calendar className="h-4 w-4 mr-1.5" />
-                  Request Booking for This Window
+                  Choose an available time
                 </Button>
 
                 <p className="text-[11px] text-neutral-400 text-center">
-                  Zero cancellation fee up to 24 hours prior to slot initiation.
+                  Cancellation and rescheduling follow the host organisation&apos;s policy.
                 </p>
               </div>
             </div>
@@ -662,11 +596,11 @@ export function ResourceDetailPage() {
 
       {/* ── Booking Modal Workflow ───────────────────────────── */}
       <BookingModal
+        key={selectedDate}
         resource={resource}
         isOpen={isBookingModalOpen}
         onClose={() => setIsBookingModalOpen(false)}
         initialDate={selectedDate}
-        initialTime={selectedStartTime}
       />
     </div>
   )

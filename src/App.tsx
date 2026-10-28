@@ -20,6 +20,7 @@ import {
   DiscoverPage,
   ResourceDetailPage,
   MyBookingsPage,
+  BookingDetailPage,
   MyRequestsPage,
   NotificationsPage,
   UserSettingsPage,
@@ -76,6 +77,7 @@ export function App() {
         <Route path="discover" element={<DiscoverPage />} />
         <Route path="resources/:id" element={<ResourceDetailPage />} />
         <Route path="bookings" element={<MyBookingsPage />} />
+        <Route path="bookings/:id" element={<BookingDetailPage />} />
         <Route path="requests" element={<MyRequestsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<UserSettingsPage />} />

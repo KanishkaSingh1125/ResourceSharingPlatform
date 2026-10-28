@@ -3,90 +3,98 @@ import {
   type BookingDecisionInput,
   type BookingRequestInput,
   type BookingStatus,
+  type AvailableSlot,
 } from '@/types/booking'
 import { getResourceById } from './resourceService'
-import { getCurrentProfile } from './authService'
+import { getCurrentProfile, getProfileById } from './authService'
+import { getOrganisationById } from './organisationService'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { type Database } from '@/types/database'
 
-const STORAGE_KEY_BOOKINGS = 'sharesphere_bookings_v1'
+type BookingRow = Database['public']['Tables']['bookings']['Row']
 
-const SEED_BOOKINGS: Booking[] = [
-  {
-    id: 'book-seed-01',
-    resourceId: 'res-cryo-tem-01',
-    resourceTitle: 'Cryogenic Transmission Electron Microscope (Cryo-TEM 300kV)',
-    resourceCategory: 'Laboratories',
-    userId: 'usr-turing-01',
-    userName: 'Prof. Alan Turing',
-    userEmail: 'turing@mit.edu',
-    userOrganisationId: 'org-mit-nanotech-01',
-    userOrganisationName: 'MIT Nanotech Core Lab',
-    ownerOrganisationId: 'org-mit-nanotech-01',
-    ownerOrganisationName: 'MIT Nanotech Core Lab',
-    status: 'approved',
-    startTime: '2026-11-02T09:00:00Z',
-    endTime: '2026-11-02T13:00:00Z',
-    purpose: 'High-resolution cryo-EM single particle data acquisition for membrane protein complex.',
-    attendeesCount: 2,
-    qrPassCode: 'SPHERE-PASS-MIT-90812',
-    approvedBy: 'Director of Laboratory Operations',
-    approvedAt: '2026-10-25T14:00:00Z',
-    createdAt: '2026-10-25T11:30:00Z',
-    updatedAt: '2026-10-25T14:00:00Z',
-  },
-  {
-    id: 'book-seed-02',
-    resourceId: 'res-dgx-h100-03',
-    resourceTitle: 'NVIDIA DGX H100 AI Supercompute Pod (8x H100 SXM5)',
-    resourceCategory: 'Computers & High-Compute',
-    userId: 'usr-turing-01',
-    userName: 'Prof. Alan Turing',
-    userEmail: 'turing@mit.edu',
-    userOrganisationId: 'org-mit-nanotech-01',
-    userOrganisationName: 'MIT Nanotech Core Lab',
-    ownerOrganisationId: 'org-cambridge-hpc-02',
-    ownerOrganisationName: 'Cambridge High Performance Computing Lab',
-    status: 'in_progress',
-    startTime: '2026-10-28T08:00:00Z',
-    endTime: '2026-10-28T20:00:00Z',
-    purpose: 'Distributed fine-tuning of 70B parameter molecular dynamics foundation model.',
-    attendeesCount: 1,
-    qrPassCode: 'SPHERE-PASS-HPC-44120',
-    approvedBy: 'HPC Facility Lead',
-    approvedAt: '2026-10-27T16:00:00Z',
-    createdAt: '2026-10-27T10:15:00Z',
-    updatedAt: '2026-10-28T08:00:00Z',
-  },
+const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [
+  'pending',
+  'approved',
+  'confirmed',
+  'rescheduling_requested',
+  'in_progress',
 ]
 
-function getStoredBookings(): Record<string, Booking> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_BOOKINGS)
-    if (!raw) {
-      const initial: Record<string, Booking> = {}
-      for (const b of SEED_BOOKINGS) {
-        initial[b.id] = b
-      }
-      localStorage.setItem(STORAGE_KEY_BOOKINGS, JSON.stringify(initial))
-      return initial
-    }
-    return JSON.parse(raw)
-  } catch (err) {
-    console.error('Failed to load bookings from storage', err)
-    const initial: Record<string, Booking> = {}
-    for (const b of SEED_BOOKINGS) {
-      initial[b.id] = b
-    }
-    return initial
+function requireBackend(): void {
+  if (!isSupabaseConfigured) {
+    throw new Error('Booking actions require a configured Supabase backend.')
   }
 }
 
-function saveStoredBookings(data: Record<string, Booking>): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_BOOKINGS, JSON.stringify(data))
-  } catch (err) {
-    console.error('Failed to save bookings to storage', err)
+async function requireCurrentUser() {
+  requireBackend()
+  const { data, error } = await supabase.auth.getUser()
+  if (error) throw new Error(`Could not verify your session: ${error.message}`)
+  if (!data.user) throw new Error('Sign in before managing bookings.')
+
+  const profile = await getCurrentProfile()
+  if (profile.id !== data.user.id) {
+    throw new Error('Your authenticated profile could not be verified.')
   }
+  return profile
+}
+
+async function toBooking(row: BookingRow): Promise<Booking> {
+  const [resource, requester, userOrg, ownerOrg] = await Promise.all([
+    getResourceById(row.resource_id),
+    getProfileById(row.user_id),
+    getOrganisationById(row.organisation_id),
+    getOrganisationById(row.owner_organisation_id),
+  ])
+  return {
+    id: row.id,
+    resourceId: row.resource_id,
+    resourceTitle: resource?.title || 'Resource',
+    resourceCategory: resource?.category || 'Uncategorised',
+    userId: row.user_id,
+    userName: requester?.fullName || 'Requester',
+    userEmail: requester?.email || '',
+    userOrganisationId: row.organisation_id,
+    userOrganisationName: userOrg?.name || 'Organisation',
+    ownerOrganisationId: row.owner_organisation_id,
+    ownerOrganisationName: ownerOrg?.name || 'Host organisation',
+    status: row.status as BookingStatus,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    purpose: row.purpose,
+    attendeesCount: row.attendees_count ?? undefined,
+    specialRequirements: row.special_requirements ?? undefined,
+    qrPassCode: row.qr_pass_code ?? undefined,
+    checkInTime: row.check_in_time ?? undefined,
+    checkOutTime: row.check_out_time ?? undefined,
+    conditionOnCheckout: row.condition_on_checkout ?? undefined,
+    conditionOnReturn: row.condition_on_return ?? undefined,
+    rejectionReason: row.rejection_reason ?? undefined,
+    approvedBy: row.approved_by ?? undefined,
+    approvedAt: row.approved_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+async function getActiveBookingsForWindow(
+  resourceId: string,
+  startTime: Date,
+  endTime: Date
+): Promise<Array<{ start_time: string; end_time: string; status: string }>> {
+  requireBackend()
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('start_time,end_time,status')
+    .eq('resource_id', resourceId)
+    .lt('start_time', endTime.toISOString())
+    .gt('end_time', startTime.toISOString())
+
+  if (error) throw new Error(`Could not load availability: ${error.message}`)
+  return (data || []).filter((booking: { status: string }) =>
+    ACTIVE_BOOKING_STATUSES.includes(booking.status as BookingStatus)
+  )
 }
 
 export async function checkResourceAvailability(
@@ -94,6 +102,7 @@ export async function checkResourceAvailability(
   startTime: string,
   endTime: string
 ): Promise<{ isAvailable: boolean; conflictReason?: string }> {
+  requireBackend()
   const resource = await getResourceById(resourceId)
   if (!resource) {
     return { isAvailable: false, conflictReason: 'Resource does not exist.' }
@@ -121,33 +130,103 @@ export async function checkResourceAvailability(
     return { isAvailable: false, conflictReason: 'Reservation end time must be after start time.' }
   }
 
-  // Check against active bookings
-  const store = getStoredBookings()
-  const conflicts = Object.values(store).filter((b) => {
-    if (b.resourceId !== resourceId) return false
-    if (b.status === 'rejected' || b.status === 'cancelled') return false
-
-    const bStart = new Date(b.startTime).getTime()
-    const bEnd = new Date(b.endTime).getTime()
-
-    // Overlap condition
-    return reqStart < bEnd && reqEnd > bStart
-  })
+  const conflicts = await getActiveBookingsForWindow(
+    resourceId,
+    new Date(reqStart),
+    new Date(reqEnd)
+  )
 
   if (conflicts.length > 0) {
     return {
       isAvailable: false,
-      conflictReason: `Selected time slot overlaps with an existing ${conflicts[0].status} reservation.`,
+      conflictReason: `Selected time slot overlaps with an existing ${conflicts[0].status} booking.`,
     }
   }
 
   return { isAvailable: true }
 }
 
+export async function getAvailableSlots(
+  resourceId: string,
+  date: string,
+  durationMinutes: number,
+  intervalMinutes = 30
+): Promise<AvailableSlot[]> {
+  requireBackend()
+  if (!Number.isInteger(durationMinutes) || durationMinutes < 1) {
+    throw new Error('Booking duration must be a positive number of minutes.')
+  }
+  if (!Number.isInteger(intervalMinutes) || intervalMinutes < 1) {
+    throw new Error('Slot interval must be a positive number of minutes.')
+  }
+
+  const resource = await getResourceById(resourceId)
+  if (!resource) throw new Error('Resource not found.')
+  if (resource.availabilityStatus !== 'available') return []
+
+  const dayStart = new Date(`${date}T00:00:00`)
+  if (Number.isNaN(dayStart.getTime())) throw new Error('Select a valid booking date.')
+  const dayEnd = new Date(dayStart)
+  dayEnd.setDate(dayEnd.getDate() + 1)
+
+  const bookings = await getActiveBookingsForWindow(resourceId, dayStart, dayEnd)
+  const operatingHours = resource.operatingHours
+  if (!operatingHours) return []
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  if (!operatingHours.days.includes(dayNames[dayStart.getDay()])) return []
+
+  const toMinutes = (time: string) => {
+    const [hours, minutes] = time.split(':').map(Number)
+    return hours * 60 + minutes
+  }
+  const openMinutes = toMinutes(operatingHours.openTime)
+  const closeMinutes = toMinutes(operatingHours.closeTime)
+  const available: AvailableSlot[] = []
+  const now = Date.now()
+
+  for (
+    let start = openMinutes;
+    start + durationMinutes <= closeMinutes;
+    start += intervalMinutes
+  ) {
+    const localStart = new Date(dayStart)
+    localStart.setMinutes(start)
+    const localEnd = new Date(localStart.getTime() + durationMinutes * 60_000)
+    if (localStart.getTime() <= now) continue
+    const overlaps = bookings.some(
+      (booking) =>
+        localStart.getTime() < new Date(booking.end_time).getTime() &&
+        localEnd.getTime() > new Date(booking.start_time).getTime()
+    )
+    if (!overlaps) {
+      available.push({
+        startTime: `${String(Math.floor(start / 60)).padStart(2, '0')}:${String(start % 60).padStart(2, '0')}`,
+        endTime: `${String(Math.floor((start + durationMinutes) / 60)).padStart(2, '0')}:${String((start + durationMinutes) % 60).padStart(2, '0')}`,
+      })
+    }
+  }
+  return available
+}
+
 export async function createBooking(input: BookingRequestInput): Promise<Booking> {
+  const user = await requireCurrentUser()
   const resource = await getResourceById(input.resourceId)
   if (!resource) {
     throw new Error('Resource not found.')
+  }
+  if (!input.idempotencyKey.trim()) {
+    throw new Error('A retry-safe booking request key is required.')
+  }
+  if (!input.purpose.trim()) {
+    throw new Error('Describe the intended use before submitting a booking request.')
+  }
+  const attendeesCount = input.attendeesCount ?? 1
+  if (!Number.isInteger(attendeesCount) || attendeesCount < 1) {
+    throw new Error('Attendee count must be a positive whole number.')
+  }
+  if (resource.capacity && attendeesCount > resource.capacity) {
+    throw new Error(`This resource supports at most ${resource.capacity} attendees.`)
   }
 
   const availability = await checkResourceAvailability(
@@ -160,75 +239,41 @@ export async function createBooking(input: BookingRequestInput): Promise<Booking
     throw new Error(availability.conflictReason || 'Resource is not available for requested window.')
   }
 
-  const user = await getCurrentProfile()
-  const now = new Date().toISOString()
-  const id = `book-${Date.now()}`
-  const qrPassCode = `SPHERE-PASS-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Date.now().toString().slice(-4)}`
+  const { data, error } = await supabase
+    .from('bookings')
+    .insert({
+      id: input.idempotencyKey,
+      resource_id: resource.id,
+      user_id: user.id,
+      organisation_id: user.organisationId,
+      owner_organisation_id: resource.organisationId,
+      start_time: input.startTime,
+      end_time: input.endTime,
+      purpose: input.purpose,
+      attendees_count: attendeesCount,
+      special_requirements: input.specialRequirements,
+    })
+    .select()
+    .single()
 
-  // Automatic approval if resource is open access, otherwise pending
-  const initialStatus: BookingStatus = resource.accessLevel === 'open' ? 'approved' : 'pending'
-
-  const newBooking: Booking = {
-    id,
-    resourceId: resource.id,
-    resourceTitle: resource.title,
-    resourceCategory: resource.category,
-    userId: user.id,
-    userName: user.fullName,
-    userEmail: user.email,
-    userOrganisationId: user.organisationId,
-    userOrganisationName: user.organisationName,
-    ownerOrganisationId: resource.organisationId,
-    ownerOrganisationName: resource.organisationName,
-    status: initialStatus,
-    startTime: input.startTime,
-    endTime: input.endTime,
-    purpose: input.purpose,
-    attendeesCount: input.attendeesCount || 1,
-    specialRequirements: input.specialRequirements,
-    qrPassCode,
-    approvedAt: initialStatus === 'approved' ? now : undefined,
-    approvedBy: initialStatus === 'approved' ? 'Automated Open-Access Policy' : undefined,
-    createdAt: now,
-    updatedAt: now,
-  }
-
-  if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase
+  if (error) {
+    if (error.code === '23505') {
+      const { data: existing, error: existingError } = await supabase
         .from('bookings')
-        .insert({
-          id,
-          resource_id: resource.id,
-          user_id: user.id,
-          organisation_id: user.organisationId,
-          owner_organisation_id: resource.organisationId,
-          status: initialStatus,
-          start_time: input.startTime,
-          end_time: input.endTime,
-          purpose: input.purpose,
-          attendees_count: input.attendeesCount || 1,
-          special_requirements: input.specialRequirements,
-          qr_pass_code: qrPassCode,
-          created_at: now,
-          updated_at: now,
-        })
-        .select()
-        .single()
-
-      if (!error && data) {
-        // saved
-      }
-    } catch {
-      // fallback
+        .select('*')
+        .eq('id', input.idempotencyKey)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!existingError && existing) return toBooking(existing)
     }
+    throw new Error(
+      error.code === '23P01' || error.code === '23505'
+        ? 'That time slot was just booked. Refresh availability and choose another slot.'
+        : `Booking could not be submitted: ${error.message}`
+    )
   }
-
-  const store = getStoredBookings()
-  store[id] = newBooking
-  saveStoredBookings(store)
-
-  return newBooking
+  if (!data) throw new Error('The backend did not confirm the booking request.')
+  return toBooking(data as BookingRow)
 }
 
 export async function getBookings(filter: {
@@ -237,98 +282,152 @@ export async function getBookings(filter: {
   ownerOrganisationId?: string
   status?: BookingStatus
 } = {}): Promise<Booking[]> {
-  const store = getStoredBookings()
-  let list = Object.values(store)
+  await requireCurrentUser()
+  let query = supabase.from('bookings').select('*').order('created_at', { ascending: false })
+  if (filter.userId) query = query.eq('user_id', filter.userId)
+  if (filter.organisationId) query = query.eq('organisation_id', filter.organisationId)
+  if (filter.ownerOrganisationId) query = query.eq('owner_organisation_id', filter.ownerOrganisationId)
+  if (filter.status) query = query.eq('status', filter.status)
 
-  if (filter.userId) {
-    list = list.filter((b) => b.userId === filter.userId)
-  }
-  if (filter.organisationId) {
-    list = list.filter((b) => b.userOrganisationId === filter.organisationId)
-  }
-  if (filter.ownerOrganisationId) {
-    list = list.filter((b) => b.ownerOrganisationId === filter.ownerOrganisationId)
-  }
-  if (filter.status) {
-    list = list.filter((b) => b.status === filter.status)
-  }
-
-  list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  return list
+  const { data, error } = await query
+  if (error) throw new Error(`Could not load bookings: ${error.message}`)
+  return Promise.all((data || []).map((row: BookingRow) => toBooking(row)))
 }
 
 export async function getBookingById(id: string): Promise<Booking | null> {
-  const store = getStoredBookings()
-  return store[id] || null
+  await requireCurrentUser()
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw new Error(`Could not load booking: ${error.message}`)
+  return data ? toBooking(data as BookingRow) : null
 }
 
 export async function decideBooking(input: BookingDecisionInput): Promise<Booking> {
-  const store = getStoredBookings()
-  const booking = store[input.bookingId]
-  if (!booking) {
-    throw new Error('Booking not found.')
+  const profile = await requireCurrentUser()
+  if (!['manager', 'org_admin', 'platform_admin'].includes(profile.role)) {
+    throw new Error('Only an authorised organisation manager can review booking requests.')
+  }
+  if (input.decision === 'reject' && !input.reason?.trim()) {
+    throw new Error('Provide a reason when rejecting a booking.')
   }
 
   const now = new Date().toISOString()
-  const updated: Booking = {
-    ...booking,
-    status: input.decision === 'approve' ? 'approved' : 'rejected',
-    rejectionReason: input.decision === 'reject' ? input.reason : undefined,
-    approvedAt: input.decision === 'approve' ? now : undefined,
-    approvedBy: input.decision === 'approve' ? 'Facility Manager' : undefined,
-    updatedAt: now,
-  }
+  let update = supabase
+    .from('bookings')
+    .update({
+      status: input.decision === 'approve' ? 'approved' : 'rejected',
+      rejection_reason: input.decision === 'reject' ? input.reason?.trim() : null,
+      approved_by: input.decision === 'approve' ? profile.id : null,
+      approved_at: input.decision === 'approve' ? now : null,
+      updated_at: now,
+    })
+    .eq('id', input.bookingId)
+    .eq('owner_organisation_id', profile.organisationId)
+    .eq('status', 'pending')
+  const { data, error } = await update.select().maybeSingle()
+  if (error) throw new Error(`Could not update booking: ${error.message}`)
+  if (!data) throw new Error('This request is no longer pending or you cannot manage it.')
+  return toBooking(data as BookingRow)
+}
 
-  store[input.bookingId] = updated
-  saveStoredBookings(store)
-  return updated
+export async function cancelBooking(bookingId: string): Promise<Booking> {
+  const profile = await requireCurrentUser()
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('id', bookingId)
+    .eq('user_id', profile.id)
+    .in('status', ['pending', 'approved', 'confirmed'])
+    .select()
+    .maybeSingle()
+  if (error) throw new Error(`Could not cancel booking: ${error.message}`)
+  if (!data) throw new Error('This booking cannot be cancelled or is no longer active.')
+  return toBooking(data as BookingRow)
+}
+
+export async function requestBookingReschedule(
+  _bookingId: string,
+  _startTime: string,
+  _endTime: string,
+  _reason: string
+): Promise<never> {
+  requireBackend()
+  throw new Error(
+    'Rescheduling is unavailable until the backend contract and persistence fields are deployed.'
+  )
+}
+
+export async function markBookingNoShow(bookingId: string): Promise<Booking> {
+  const profile = await requireCurrentUser()
+  if (!['manager', 'org_admin', 'platform_admin'].includes(profile.role)) {
+    throw new Error('Only an authorised organisation manager can mark a no-show.')
+  }
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({ status: 'no_show', updated_at: now })
+    .eq('id', bookingId)
+    .eq('owner_organisation_id', profile.organisationId)
+    .in('status', ['approved', 'confirmed'])
+    .lt('end_time', now)
+    .select()
+    .maybeSingle()
+  if (error) throw new Error(`Could not mark booking as no-show: ${error.message}`)
+  if (!data) throw new Error('This booking cannot be marked as a no-show.')
+  return toBooking(data as BookingRow)
 }
 
 export async function updateBookingCheckIn(
   bookingId: string,
   conditionNotes?: string
 ): Promise<Booking> {
-  const store = getStoredBookings()
-  const booking = store[bookingId]
-  if (!booking) {
-    throw new Error('Booking not found.')
-  }
-
+  const profile = await requireCurrentUser()
   const now = new Date().toISOString()
-  const updated: Booking = {
-    ...booking,
-    status: 'in_progress',
-    checkInTime: now,
-    conditionOnCheckout: conditionNotes || 'Asset inspected and checked out in functional operating order.',
-    updatedAt: now,
-  }
-
-  store[bookingId] = updated
-  saveStoredBookings(store)
-  return updated
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({
+      status: 'in_progress',
+      check_in_time: now,
+      condition_on_checkout: conditionNotes,
+      updated_at: now,
+    })
+    .eq('id', bookingId)
+    .eq('user_id', profile.id)
+    .in('status', ['approved', 'confirmed'])
+    .lte('start_time', now)
+    .gt('end_time', now)
+    .select()
+    .maybeSingle()
+  if (error) throw new Error(`Could not check in: ${error.message}`)
+  if (!data) throw new Error('This booking cannot be checked in.')
+  return toBooking(data as BookingRow)
 }
 
 export async function updateBookingCheckOut(
   bookingId: string,
   conditionNotes?: string
 ): Promise<Booking> {
-  const store = getStoredBookings()
-  const booking = store[bookingId]
-  if (!booking) {
-    throw new Error('Booking not found.')
+  const profile = await requireCurrentUser()
+  if (!['manager', 'org_admin', 'platform_admin'].includes(profile.role)) {
+    throw new Error('Only an authorised organisation manager can check out bookings.')
   }
-
-  const now = new Date().toISOString()
-  const updated: Booking = {
-    ...booking,
-    status: 'completed',
-    checkOutTime: now,
-    conditionOnReturn: conditionNotes || 'Resource returned in satisfactory, operational condition.',
-    updatedAt: now,
-  }
-
-  store[bookingId] = updated
-  saveStoredBookings(store)
-  return updated
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({
+      status: 'completed',
+      check_out_time: new Date().toISOString(),
+      condition_on_return: conditionNotes,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', bookingId)
+    .eq('owner_organisation_id', profile.organisationId)
+    .eq('status', 'in_progress')
+    .select()
+    .maybeSingle()
+  if (error) throw new Error(`Could not check out: ${error.message}`)
+  if (!data) throw new Error('This booking cannot be checked out.')
+  return toBooking(data as BookingRow)
 }
-

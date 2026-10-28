@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Calendar,
   AlertTriangle,
   CheckCircle2,
-  XCircle,
+  Clock3,
   MapPin,
   Send,
   Loader2,
   QrCode,
+  XCircle,
 } from 'lucide-react'
 import {
   Modal,
@@ -17,12 +18,14 @@ import {
   Textarea,
   Badge,
   useToast,
+  Alert,
 } from '@/components/ui'
 import { type Resource } from '@/types/resource'
 import { type EligibilityCheckResult } from '@/types/eligibility'
 import { checkUserResourceEligibility } from '@/services/eligibilityService'
-import { checkResourceAvailability, createBooking } from '@/services/bookingService'
+import { createBooking, getAvailableSlots } from '@/services/bookingService'
 import { getCurrentProfile } from '@/services/authService'
+import { type Booking, type AvailableSlot } from '@/types/booking'
 
 export interface BookingModalProps {
   resource: Resource | null
@@ -47,7 +50,7 @@ export function BookingModal({
   const [minDate] = useState(() => new Date().toISOString().split('T')[0])
   const [date, setDate] = useState(() => initialDate || new Date(Date.now() + 86400000).toISOString().split('T')[0])
   const [startTime, setStartTime] = useState(initialTime || '09:00')
-  const [endTime, setEndTime] = useState('13:00')
+  const [durationMinutes, setDurationMinutes] = useState(240)
   const [purpose, setPurpose] = useState('')
   const [attendeesCount, setAttendeesCount] = useState(1)
   const [specialRequirements, setSpecialRequirements] = useState('')
@@ -57,15 +60,21 @@ export function BookingModal({
     resourceId: string
     message: string
   } | null>(null)
-  const [availabilityResult, setAvailabilityResult] = useState<{ isAvailable: boolean; conflictReason?: string } | null>(null)
-  const [checkingAvailability, setCheckingAvailability] = useState(false)
+  const [slotQuery, setSlotQuery] = useState<{
+    key: string
+    slots?: AvailableSlot[]
+    error?: string
+  } | null>(null)
+  const [availabilityRevision, setAvailabilityRevision] = useState(0)
   const [submitting, setSubmitting] = useState(false)
-  const [bookingConfirmedCode, setBookingConfirmedCode] = useState<string | null>(null)
+  const [submittedBooking, setSubmittedBooking] = useState<Booking | null>(null)
+  const requestKey = useRef<{ signature: string; id: string } | null>(null)
 
   const handleModalClose = () => {
     setEligibility(null)
     setEligibilityError(null)
-    setBookingConfirmedCode(null)
+    setSubmittedBooking(null)
+    requestKey.current = null
     onClose()
   }
 
@@ -98,29 +107,30 @@ export function BookingModal({
     }
   }, [resource, isOpen])
 
-  // Real-time slot availability check
+  const slotQueryKey = `${resource?.id || ''}:${date}:${durationMinutes}:${availabilityRevision}`
+
+  // Availability is loaded from backend bookings for the selected date and duration.
   useEffect(() => {
     let isMounted = true
-    if (!resource || !date || !startTime || !endTime) return
+    if (!resource || !isOpen || !date) return
 
-    const startISO = `${date}T${startTime}:00`
-    const endISO = `${date}T${endTime}:00`
-
-    checkResourceAvailability(resource.id, startISO, endISO)
-      .then((res) => {
-        if (isMounted) {
-          setAvailabilityResult(res)
-          setCheckingAvailability(false)
-        }
+    getAvailableSlots(resource.id, date, durationMinutes)
+      .then((slots) => {
+        if (isMounted) setSlotQuery({ key: slotQueryKey, slots })
       })
-      .catch(() => {
-        if (isMounted) setCheckingAvailability(false)
+      .catch((err) => {
+        if (isMounted) {
+          setSlotQuery({
+            key: slotQueryKey,
+            error: err instanceof Error ? err.message : 'Available slots could not be loaded.',
+          })
+        }
       })
 
     return () => {
       isMounted = false
     }
-  }, [resource, date, startTime, endTime])
+  }, [resource, isOpen, date, durationMinutes, slotQueryKey])
 
   if (!resource) return null
 
@@ -130,6 +140,20 @@ export function BookingModal({
     eligibilityError?.resourceId === resource.id ? eligibilityError.message : null
   const checkingEligibility =
     isOpen && currentEligibility === null && currentEligibilityError === null
+  const currentSlotQuery = slotQuery?.key === slotQueryKey ? slotQuery : null
+  const checkingAvailability = currentSlotQuery === null
+  const availableSlots = currentSlotQuery?.slots || []
+  const selectedSlot = availableSlots.find((slot) => slot.startTime === startTime) || null
+  const bookingConfirmedCode =
+    submittedBooking && ['approved', 'confirmed'].includes(submittedBooking.status)
+      ? submittedBooking.qrPassCode
+      : null
+  const submittedStart = submittedBooking
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(submittedBooking.startTime))
+    : ''
+  const submittedEnd = submittedBooking
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(submittedBooking.endTime))
+    : ''
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -149,16 +173,24 @@ export function BookingModal({
       return
     }
 
-    if (availabilityResult?.isAvailable !== true) {
-      error(
-        'Conflict Detected',
-        availabilityResult?.conflictReason || 'Resource is not available.'
-      )
+    if (!selectedSlot) {
+      error('No available slot', 'Choose one of the currently available times returned by the backend.')
       return
     }
 
-    const startISO = `${date}T${startTime}:00Z`
-    const endISO = `${date}T${endTime}:00Z`
+    const startISO = new Date(`${date}T${selectedSlot.startTime}:00`).toISOString()
+    const endISO = new Date(`${date}T${selectedSlot.endTime}:00`).toISOString()
+    const signature = JSON.stringify({
+      resourceId: resource.id,
+      startISO,
+      endISO,
+      purpose: purpose.trim(),
+      attendeesCount,
+      specialRequirements: specialRequirements.trim(),
+    })
+    if (requestKey.current?.signature !== signature) {
+      requestKey.current = { signature, id: crypto.randomUUID() }
+    }
 
     try {
       setSubmitting(true)
@@ -169,22 +201,21 @@ export function BookingModal({
         purpose: purpose.trim(),
         attendeesCount,
         specialRequirements: specialRequirements.trim() || undefined,
+        idempotencyKey: requestKey.current.id,
       })
 
-      success(
-        'Reservation Submitted',
-        newBooking.status === 'approved'
-          ? 'Your booking is confirmed! QR check-in pass has been generated.'
-          : 'Your booking request has been submitted for facility manager approval.'
-      )
-
-      setBookingConfirmedCode(newBooking.qrPassCode || 'SPHERE-PASS-CONFIRMED')
+      setSubmittedBooking(newBooking)
+      success('Booking request saved', 'The booking status shown here was returned by the backend.')
 
       if (onBookingSuccess) {
         onBookingSuccess()
       }
     } catch (err) {
-      error('Reservation Failed', err instanceof Error ? err.message : 'Could not submit booking request.')
+      const message = err instanceof Error ? err.message : 'Could not submit booking request.'
+      error('Reservation Failed', message)
+      if (message.toLowerCase().includes('slot') || message.toLowerCase().includes('overlap')) {
+        setAvailabilityRevision((revision) => revision + 1)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -195,14 +226,14 @@ export function BookingModal({
       isOpen={isOpen}
       onClose={handleModalClose}
       size="xl"
-      title={bookingConfirmedCode ? 'Booking Confirmed' : `Request Booking: ${resource.title}`}
+      title={submittedBooking ? 'Booking request status' : `Request Booking: ${resource.title}`}
       description={
-        bookingConfirmedCode
-          ? 'Your reservation is active. Present this digital pass code during facility check-in.'
+        submittedBooking
+          ? 'This status was returned by the backend after submission.'
           : `${resource.category} • ${resource.organisationName}`
       }
       footer={
-        bookingConfirmedCode ? (
+        submittedBooking ? (
           <div className="flex items-center justify-between w-full">
             <Button variant="outline" size="sm" onClick={handleModalClose}>
               Close
@@ -234,7 +265,7 @@ export function BookingModal({
                 currentEligibility === null ||
                 !currentEligibility.isEligible ||
                 checkingAvailability ||
-                availabilityResult?.isAvailable !== true
+                !selectedSlot
               }
               isLoading={submitting}
             >
@@ -245,21 +276,37 @@ export function BookingModal({
         )
       }
     >
-      {bookingConfirmedCode ? (
+      {submittedBooking ? (
         <div className="space-y-6 text-center py-4">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-emerald-100 text-emerald-700">
-            <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+          <div className={`inline-flex items-center justify-center p-3 rounded-2xl ${bookingConfirmedCode ? 'bg-emerald-100 text-emerald-700' : submittedBooking.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+            {bookingConfirmedCode ? (
+              <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+            ) : submittedBooking.status === 'rejected' ? (
+              <XCircle className="h-10 w-10 text-red-600" />
+            ) : (
+              <Clock3 className="h-10 w-10 text-amber-600" />
+            )}
           </div>
 
           <div className="space-y-1">
-            <h4 className="text-base font-bold text-neutral-900">Reservation Confirmed</h4>
-            <p className="text-xs text-neutral-500">
-              Reserved window: {date} ({startTime} - {endTime})
+            <h4 className="text-base font-bold text-neutral-900">
+              {bookingConfirmedCode ? 'Booking confirmed' : submittedBooking.status === 'rejected' ? 'Booking rejected' : 'Request submitted'}
+            </h4>
+            <p className="text-sm font-medium text-neutral-700">
+              Backend status: {submittedBooking.status.replace(/_/g, ' ')}
             </p>
+            <p className="text-xs text-neutral-500">
+              Requested window: {submittedStart} – {submittedEnd}
+            </p>
+            {submittedBooking.rejectionReason && (
+              <p className="text-sm text-red-700">
+                Rejection reason: {submittedBooking.rejectionReason}
+              </p>
+            )}
           </div>
 
-          {/* QR Code Pass Box */}
-          <div className="mx-auto max-w-xs p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
+          {bookingConfirmedCode && (
+            <div className="mx-auto max-w-xs p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
             <div className="flex items-center justify-center gap-2 text-xs font-semibold text-neutral-700">
               <QrCode className="h-4 w-4 text-brand-600" />
               <span>Digital Security Check-In Pass</span>
@@ -271,6 +318,7 @@ export function BookingModal({
               Scan or show this token to facility security at {resource.location.building}.
             </p>
           </div>
+          )}
         </div>
       ) : (
         <form id="booking-request-form" onSubmit={handleFormSubmit} className="space-y-5 text-xs">
@@ -296,6 +344,20 @@ export function BookingModal({
               <span className="text-[10px] text-neutral-500">/{resource.rate.unit}</span>
             </div>
           </div>
+
+          <Alert variant="info" title="Booking rules and approval">
+            <ul className="list-disc space-y-1 pl-4">
+              {resource.bookingConditions.map((condition) => <li key={condition}>{condition}</li>)}
+              {resource.usageRules.map((rule) => <li key={`rule-${rule}`}>{rule}</li>)}
+              <li>
+                {resource.accessLevel === 'open'
+                  ? 'This resource allows open access; the backend still determines the final booking status.'
+                  : resource.accessLevel === 'approval_required'
+                    ? 'The host organisation must review and approve this request before it is confirmed.'
+                    : 'Access is limited to host-organisation members; the backend determines the permitted booking status.'}
+              </li>
+            </ul>
+          </Alert>
 
           {/* Eligibility Breakdown Banner */}
           {checkingEligibility ? (
@@ -390,26 +452,41 @@ export function BookingModal({
 
               <div>
                 <label className="block text-xs font-medium text-neutral-700 mb-1">
-                  Start Time <span className="text-red-500">*</span>
+                  Duration <span className="text-red-500">*</span>
                 </label>
-                <Input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  required
-                />
+                <select
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900"
+                  value={durationMinutes}
+                  onChange={(event) => setDurationMinutes(Number(event.target.value))}
+                >
+                  {[30, 60, 90, 120, 180, 240, 360].map((minutes) => (
+                    <option key={minutes} value={minutes}>
+                      {minutes >= 60 ? `${minutes / 60} hour${minutes > 60 ? 's' : ''}` : `${minutes} minutes`}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-neutral-700 mb-1">
-                  End Time <span className="text-red-500">*</span>
+                  Available time <span className="text-red-500">*</span>
                 </label>
-                <Input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
+                <select
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900"
+                  value={selectedSlot?.startTime || ''}
+                  onChange={(event) => setStartTime(event.target.value)}
+                  disabled={checkingAvailability || availableSlots.length === 0}
                   required
-                />
+                >
+                  <option value="" disabled>
+                    {checkingAvailability ? 'Loading backend availability…' : 'Choose an available slot'}
+                  </option>
+                  {availableSlots.map((slot) => (
+                    <option key={slot.startTime} value={slot.startTime}>
+                      {slot.startTime} – {slot.endTime}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -418,21 +495,30 @@ export function BookingModal({
               {checkingAvailability ? (
                 <span className="text-neutral-500 flex items-center gap-1.5">
                   <Loader2 className="h-3 w-3 animate-spin text-brand-600" />
-                  Verifying calendar availability...
+                  Loading available slots from the backend...
                 </span>
-              ) : availabilityResult ? (
-                availabilityResult.isAvailable ? (
+              ) : currentSlotQuery?.error ? (
+                <span className="flex flex-wrap items-center gap-2 text-red-700">
+                  {currentSlotQuery.error}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={() => setAvailabilityRevision((revision) => revision + 1)}
+                  >
+                    Retry
+                  </Button>
+                </span>
+              ) : selectedSlot ? (
                   <span className="text-emerald-700 font-medium flex items-center gap-1.5">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                    Time slot is open and available for reservation.
+                    Backend slot available: {selectedSlot.startTime} – {selectedSlot.endTime}.
                   </span>
-                ) : (
-                  <span className="text-red-700 font-medium flex items-center gap-1.5">
-                    <XCircle className="h-3.5 w-3.5 text-red-600" />
-                    {availabilityResult.conflictReason}
-                  </span>
-                )
-              ) : null}
+              ) : (
+                <span className="text-neutral-500">
+                  {availableSlots.length === 0 ? 'No slots returned for this date and duration. Choose another date or duration.' : 'Select an available time above.'}
+                </span>
+              )}
             </div>
           </div>
 

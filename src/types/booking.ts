@@ -1,10 +1,13 @@
 export type BookingStatus =
   | 'pending'
   | 'approved'
+  | 'confirmed'
   | 'rejected'
+  | 'cancelled'
+  | 'rescheduling_requested'
   | 'in_progress'
   | 'completed'
-  | 'cancelled'
+  | 'no_show'
 
 export interface Booking {
   id: string
@@ -30,6 +33,10 @@ export interface Booking {
   conditionOnCheckout?: string
   conditionOnReturn?: string
   rejectionReason?: string
+  cancellationReason?: string
+  rescheduleReason?: string
+  requestedStartTime?: string
+  requestedEndTime?: string
   approvedBy?: string
   approvedAt?: string
   createdAt: string
@@ -43,6 +50,7 @@ export interface BookingRequestInput {
   purpose: string
   attendeesCount?: number
   specialRequirements?: string
+  idempotencyKey: string
 }
 
 export interface BookingDecisionInput {
@@ -51,10 +59,14 @@ export interface BookingDecisionInput {
   reason?: string
 }
 
+export interface AvailableSlot {
+  startTime: string
+  endTime: string
+}
+
 export interface TimeSlot {
   startTime: string
   endTime: string
   isAvailable: boolean
   bookingId?: string
 }
-
