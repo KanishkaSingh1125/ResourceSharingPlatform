@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Search,
@@ -8,19 +8,29 @@ import {
   LogOut,
   Menu,
   X,
+  UserCircle,
 } from 'lucide-react'
 import { useState } from 'react'
+import { useAuth } from '@/lib/AuthContext'
 
 const sidebarLinks = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Overview' },
   { to: '/dashboard/discover', icon: Search, label: 'Discover' },
   { to: '/dashboard/bookings', icon: CalendarDays, label: 'My Bookings' },
   { to: '/dashboard/notifications', icon: Bell, label: 'Notifications' },
+  { to: '/dashboard/profile', icon: UserCircle, label: 'Profile' },
   { to: '/dashboard/settings', icon: Settings, label: 'Settings' },
 ] as const
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { signOut, profile } = useAuth()
+  const navigate = useNavigate()
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -58,6 +68,16 @@ export function DashboardLayout() {
           </button>
         </div>
 
+        {/* User info */}
+        {profile && (
+          <div className="border-b border-neutral-200 px-6 py-3">
+            <p className="truncate text-sm font-medium text-neutral-800">
+              {profile.display_name || 'User'}
+            </p>
+            <p className="truncate text-xs text-neutral-500">{profile.email}</p>
+          </div>
+        )}
+
         {/* Navigation */}
         <nav className="flex-1 space-y-1 px-3 py-4">
           {sidebarLinks.map(({ to, icon: Icon, label }) => (
@@ -83,6 +103,7 @@ export function DashboardLayout() {
         <div className="border-t border-neutral-200 p-3">
           <button
             type="button"
+            onClick={handleSignOut}
             className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
           >
             <LogOut className="h-4 w-4" />
@@ -112,4 +133,5 @@ export function DashboardLayout() {
     </div>
   )
 }
+
 

@@ -3,4 +3,8 @@ export { ExplorePage } from './ExplorePage'
 export { JoinPage } from './JoinPage'
 export { RegisterOrgPage } from './RegisterOrgPage'
 export { LoginPage } from './LoginPage'
+export { VerifyEmailPage } from './VerifyEmailPage'
+export { ForgotPasswordPage } from './ForgotPasswordPage'
+export { AuthCallbackPage } from './AuthCallbackPage'
+export { UpdatePasswordPage } from './UpdatePasswordPage'
 
