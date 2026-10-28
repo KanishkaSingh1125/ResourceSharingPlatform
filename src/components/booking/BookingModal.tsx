@@ -53,7 +53,10 @@ export function BookingModal({
   const [specialRequirements, setSpecialRequirements] = useState('')
 
   const [eligibility, setEligibility] = useState<EligibilityCheckResult | null>(null)
-  const [checkingEligibility, setCheckingEligibility] = useState(false)
+  const [eligibilityError, setEligibilityError] = useState<{
+    resourceId: string
+    message: string
+  } | null>(null)
   const [availabilityResult, setAvailabilityResult] = useState<{ isAvailable: boolean; conflictReason?: string } | null>(null)
   const [checkingAvailability, setCheckingAvailability] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -61,6 +64,7 @@ export function BookingModal({
 
   const handleModalClose = () => {
     setEligibility(null)
+    setEligibilityError(null)
     setBookingConfirmedCode(null)
     onClose()
   }
@@ -75,12 +79,18 @@ export function BookingModal({
       .then((res) => {
         if (isMounted) {
           setEligibility(res)
-          setCheckingEligibility(false)
         }
       })
       .catch((err) => {
         console.error('Eligibility check error:', err)
-        if (isMounted) setCheckingEligibility(false)
+        if (isMounted) {
+          setEligibilityError(
+            {
+              resourceId: resource.id,
+              message: err instanceof Error ? err.message : 'Eligibility could not be verified.',
+            }
+          )
+        }
       })
 
     return () => {
@@ -114,6 +124,13 @@ export function BookingModal({
 
   if (!resource) return null
 
+  const currentEligibility =
+    eligibility?.resourceId === resource.id ? eligibility : null
+  const currentEligibilityError =
+    eligibilityError?.resourceId === resource.id ? eligibilityError.message : null
+  const checkingEligibility =
+    isOpen && currentEligibility === null && currentEligibilityError === null
+
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -122,8 +139,21 @@ export function BookingModal({
       return
     }
 
-    if (availabilityResult && !availabilityResult.isAvailable) {
-      error('Conflict Detected', availabilityResult.conflictReason || 'Resource is not available.')
+    if (!currentEligibility?.isEligible) {
+      error(
+        'Booking Not Available',
+        currentEligibility?.blockingReasons.join(' ') ||
+          currentEligibilityError ||
+          'Eligibility has not been verified.'
+      )
+      return
+    }
+
+    if (availabilityResult?.isAvailable !== true) {
+      error(
+        'Conflict Detected',
+        availabilityResult?.conflictReason || 'Resource is not available.'
+      )
       return
     }
 
@@ -198,7 +228,14 @@ export function BookingModal({
               form="booking-request-form"
               variant="primary"
               size="sm"
-              disabled={submitting || (availabilityResult !== null && !availabilityResult.isAvailable)}
+              disabled={
+                submitting ||
+                checkingEligibility ||
+                currentEligibility === null ||
+                !currentEligibility.isEligible ||
+                checkingAvailability ||
+                availabilityResult?.isAvailable !== true
+              }
               isLoading={submitting}
             >
               <Send className="h-4 w-4 mr-1.5" />
@@ -266,31 +303,69 @@ export function BookingModal({
               <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
               <span>Verifying your institutional clearance and training certifications...</span>
             </div>
-          ) : eligibility ? (
-            eligibility.isEligible ? (
+          ) : currentEligibilityError ? (
+            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-900 flex items-start gap-2.5">
+              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-semibold">Eligibility Could Not Be Verified</p>
+                <p className="text-[11px] text-red-800">{currentEligibilityError}</p>
+                <p className="text-[11px] text-red-800">
+                  Booking is unavailable until eligibility can be checked. Please retry or contact your organisation administrator.
+                </p>
+              </div>
+            </div>
+          ) : currentEligibility ? (
+            currentEligibility.isEligible ? (
               <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50/60 text-emerald-900 flex items-start gap-2.5">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
                   <p className="font-semibold">Eligible to Book</p>
-                  <p className="text-[11px] text-emerald-700">
-                    Your institutional accreditation and laboratory credentials match all prerequisites.
-                  </p>
+                  {currentEligibility.advisoryNotes.length > 0 && (
+                    <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-emerald-800">
+                      {currentEligibility.advisoryNotes.map((note, idx) => (
+                        <li key={`${idx}-${note}`}>{note}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             ) : (
-              <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/70 text-amber-900 space-y-1.5">
+              <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-900 space-y-1.5">
                 <div className="flex items-center gap-2 font-semibold">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                  <span>Prerequisite Requirement Notice</span>
+                  <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+                  <span>Booking Not Available</span>
                 </div>
-                <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-amber-800">
-                  {eligibility.blockingReasons.map((reason, idx) => (
-                    <li key={idx}>{reason}</li>
-                  ))}
-                </ul>
+                {currentEligibility.blockingReasons.length > 0 ? (
+                  <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-red-800">
+                    {currentEligibility.blockingReasons.map((reason, idx) => (
+                      <li key={`${idx}-${reason}`}>{reason}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[11px] text-red-800">
+                    The eligibility service has not provided a reason. Contact your organisation administrator for assistance.
+                  </p>
+                )}
+                <p className="text-[11px] text-red-800">
+                  Resolve the listed requirements with your organisation administrator, then check eligibility again.
+                </p>
+                {currentEligibility.advisoryNotes.length > 0 && (
+                  <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-red-800">
+                    {currentEligibility.advisoryNotes.map((note, idx) => (
+                      <li key={`advisory-${idx}-${note}`}>{note}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )
-          ) : null}
+          ) : (
+            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-900">
+              <p className="font-semibold">Eligibility Has Not Been Verified</p>
+              <p className="text-[11px] text-red-800">
+                Booking is unavailable until eligibility can be checked.
+              </p>
+            </div>
+          )}
 
           {/* Date & Time Selection */}
           <div className="space-y-3">

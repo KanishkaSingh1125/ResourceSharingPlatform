@@ -46,6 +46,8 @@ export function ResourceDetailPage() {
 
   const [activeImageIndex, setActiveImageIndex] = useState(0)
   const [eligibility, setEligibility] = useState<EligibilityCheckResult | null>(null)
+  const [checkingEligibility, setCheckingEligibility] = useState(false)
+  const [eligibilityError, setEligibilityError] = useState<string | null>(null)
   const [relatedResources, setRelatedResources] = useState<Resource[]>([])
 
   // Quick reservation panel state
@@ -77,12 +79,26 @@ export function ResourceDetailPage() {
         setLoading(false)
 
         // Load user eligibility
+        setEligibility(null)
+        setEligibilityError(null)
+        setCheckingEligibility(true)
         getCurrentProfile()
           .then((prof) => checkUserResourceEligibility(prof.id, res.id))
           .then((elig) => {
-            if (isMounted) setEligibility(elig)
+            if (isMounted) {
+              setEligibility(elig)
+              setCheckingEligibility(false)
+            }
           })
-          .catch(() => {})
+          .catch((err) => {
+            console.error('Failed to check resource eligibility:', err)
+            if (isMounted) {
+              setEligibilityError(
+                err instanceof Error ? err.message : 'Eligibility could not be verified.'
+              )
+              setCheckingEligibility(false)
+            }
+          })
 
         // Load related category items
         getResources({ category: res.category, limit: 3 })
@@ -195,7 +211,12 @@ export function ResourceDetailPage() {
           <Button
             variant="primary"
             size="sm"
-            disabled={!isAvailable}
+            disabled={
+              !isAvailable ||
+              checkingEligibility ||
+              eligibility === null ||
+              !eligibility.isEligible
+            }
             onClick={() => setIsBookingModalOpen(true)}
           >
             <Calendar className="h-3.5 w-3.5 mr-1" />
@@ -384,35 +405,68 @@ export function ResourceDetailPage() {
               )}
 
               {/* Eligibility Diagnostic Alert */}
-              {eligibility && (
+              {checkingEligibility ? (
+                <Alert variant="info" title="Checking Eligibility">
+                  Verifying your eligibility and the host organisation's requirements.
+                </Alert>
+              ) : eligibilityError ? (
+                <Alert variant="error" title="Eligibility Could Not Be Verified">
+                  <p>{eligibilityError}</p>
+                  <p className="mt-1">
+                    Booking is unavailable until eligibility can be checked. Please retry or contact your organisation administrator.
+                  </p>
+                </Alert>
+              ) : eligibility ? (
                 <div
                   className={`p-3 rounded-lg border text-xs mt-3 ${
                     eligibility.isEligible
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                      : 'bg-amber-50 border-amber-200 text-amber-900'
+                      : 'bg-red-50 border-red-200 text-red-900'
                   }`}
                 >
                   <p className="font-semibold flex items-center gap-1.5">
                     {eligibility.isEligible ? (
                       <>
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                        You meet all institutional eligibility requirements for this resource.
+                        Eligible to Book
                       </>
                     ) : (
                       <>
-                        <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-                        Prerequisites Required for Unsupervised Booking
+                        <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                        Booking Not Available
                       </>
                     )}
                   </p>
                   {!eligibility.isEligible && (
-                    <ul className="list-disc pl-5 mt-1.5 space-y-0.5 text-[11px] text-amber-800">
-                      {eligibility.blockingReasons.map((reason, i) => (
-                        <li key={i}>{reason}</li>
+                    <>
+                      {eligibility.blockingReasons.length > 0 ? (
+                        <ul className="list-disc pl-5 mt-1.5 space-y-0.5 text-[11px] text-red-800">
+                          {eligibility.blockingReasons.map((reason, i) => (
+                            <li key={`${i}-${reason}`}>{reason}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1.5 text-[11px] text-red-800">
+                          The eligibility service has not provided a reason. Contact your organisation administrator for assistance.
+                        </p>
+                      )}
+                      <p className="mt-1.5 text-[11px] text-red-800">
+                        Resolve the listed requirements with your organisation administrator, then check eligibility again.
+                      </p>
+                    </>
+                  )}
+                  {eligibility.advisoryNotes.length > 0 && (
+                    <ul className="list-disc pl-5 mt-1.5 space-y-0.5 text-[11px]">
+                      {eligibility.advisoryNotes.map((note, i) => (
+                        <li key={`advisory-${i}-${note}`}>{note}</li>
                       ))}
                     </ul>
                   )}
                 </div>
+              ) : (
+                <Alert variant="error" title="Eligibility Has Not Been Verified">
+                  Booking is unavailable until eligibility can be checked.
+                </Alert>
               )}
             </CardContent>
           </Card>
@@ -523,7 +577,14 @@ export function ResourceDetailPage() {
                 <Button
                   variant="primary"
                   className="w-full"
-                  disabled={!isAvailable || (slotAvailability !== null && !slotAvailability.isAvailable)}
+                  disabled={
+                    !isAvailable ||
+                    checkingEligibility ||
+                    eligibility === null ||
+                    !eligibility.isEligible ||
+                    checkingSlot ||
+                    slotAvailability?.isAvailable !== true
+                  }
                   onClick={() => setIsBookingModalOpen(true)}
                 >
                   <Calendar className="h-4 w-4 mr-1.5" />
