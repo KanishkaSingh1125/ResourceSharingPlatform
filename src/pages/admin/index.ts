@@ -4,4 +4,7 @@ export { AdminUsersPage } from './AdminUsersPage'
 export { AdminAnalyticsPage } from './AdminAnalyticsPage'
 export { AdminReportsPage } from './AdminReportsPage'
 export { AdminSettingsPage } from './AdminSettingsPage'
-
+export { AdminVerificationQueuePage } from './AdminVerificationQueuePage'
+export { AdminMonitoringPage } from './AdminMonitoringPage'
+export { AdminIncidentsPage } from './AdminIncidentsPage'
+export { AdminAuditLogsPage } from './AdminAuditLogsPage'

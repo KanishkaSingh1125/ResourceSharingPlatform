@@ -1,6 +1,6 @@
 export { DashboardOverview } from './DashboardOverview'
 export { DiscoverPage } from './DiscoverPage'
 export { MyBookingsPage } from './MyBookingsPage'
+export { MyRequestsPage } from './MyRequestsPage'
 export { NotificationsPage } from './NotificationsPage'
 export { UserSettingsPage } from './UserSettingsPage'
-
