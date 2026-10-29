@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # ShareSphere — Resource Sharing Platform
 
 > A hackathon project that connects community organisations with people who need
@@ -10,9 +9,10 @@
 
 ShareSphere is a web platform where:
 
-- **Organisations** register and list their available resources.
+- **Organisations** can manage resource listings through the supported backend operations.
 - **Users** browse, discover, and request bookings for those resources.
-- **AI matching** helps users find the best-fit resource for their needs.
+- **The alternative finder** helps users explore suitable resources; its fallback is deterministic,
+  not AI-generated.
 - **Admins** manage the platform, approve organisations, and handle reports.
 
 ---
@@ -49,7 +49,7 @@ ResourceSharingPlatform/
 │   ├── main.tsx              React entry point
 │   └── index.css             Global styles + design tokens (Tailwind v4)
 ├── supabase/
-│   ├── migrations/           SQL migration files (one per schema change)
+│   ├── migrations/           Migration directory (no schema migrations are included)
 │   ├── seed.sql              Example data for local development
 │   └── config.toml           Local Supabase stack configuration
 ├── .env.example              Environment variable template (no real secrets)
@@ -82,16 +82,17 @@ npm install
 
 ### 3. Configure environment variables
 
-```bash
-cp .env.example .env
-```
-
-Open `.env` and fill in your Supabase project URL and anon key:
+Create a local `.env.local` file from `.env.example` and fill in your Supabase project URL and anon key:
 
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
 ```
+
+The Supabase anon key is intended for browser use, but database access must be protected by
+correctly configured row-level security (RLS). Never put a service-role key or private AI provider
+key in a `VITE_` variable. No database schema migrations are included in this repository, so
+`supabase db reset` cannot configure a working backend by itself.
 
 ### 4. (Optional) Start local Supabase
 
@@ -99,7 +100,6 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here
 
 ```bash
 supabase start
-supabase db reset   # applies migrations + seed data
 ```
 
 ### 5. Start the development server
@@ -120,6 +120,7 @@ The app is available at **http://localhost:5173**.
 | `npm run build`   | Type-check + production build          |
 | `npm run preview` | Preview the production build locally   |
 | `npm run lint`    | Run Oxlint static analysis             |
+| `npm test`        | Run the Vitest frontend test suite      |
 
 ---
 
@@ -138,59 +139,13 @@ The app is available at **http://localhost:5173**.
 
 ---
 
-## 📊 Implementation Status
+## Backend and feature status
 
-| Feature                        | Status        |
-|--------------------------------|---------------|
-| Project scaffolding            | ✅ Complete    |
-| Routing & layouts              | ✅ Complete    |
-| Design tokens / global styles  | ✅ Complete    |
-| Supabase client setup          | ✅ Complete    |
-| UI component library (basics)  | ✅ Complete    |
-| Authentication (login/register)| 🔲 Planned    |
-| Organisation management        | 🔲 Planned    |
-| Resource listing & browsing    | 🔲 Planned    |
-| Booking system                 | 🔲 Planned    |
-| Eligibility rules engine       | 🔲 Planned    |
-| Incident reporting             | 🔲 Planned    |
-| AI-assisted resource matching  | 🔲 Planned    |
-| Admin panel                    | 🔲 Planned    |
-| Database migrations            | 🔲 Planned    |
-
----
-
-## 🧑‍💻 Contributing (Hackathon Team)
-
-1. Create a feature branch: `git checkout -b feature/your-feature`
-2. Make your changes
-3. Push and open a pull request against `main`
-
-> **Do not commit** `.env` — it is git-ignored. Only commit `.env.example` with
-> placeholder variable names.
-
----
-
-## 📄 License
-
-MIT — see [LICENSE](./LICENSE) for details.
-=======
-# ShareSphere
-
-ShareSphere is a React, TypeScript, and Vite application for discovering shared institutional resources and managing booking requests.
-
-## Development
-
-Requirements: Node.js and npm.
-
-```sh
-npm install
-npm run dev
-npm run build
-npm run lint
-npm test
-```
-
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in a local `.env` file to connect to Supabase. Sign-in and protected pages require an authenticated Supabase session and a persisted `profiles` row. This repository does not include database migrations; configure and verify the backend schema and row-level security policies separately.
+The application includes Supabase-backed frontend service flows, but this repository does not
+include database schema migrations or deployable backend functions. Configure the matching
+schema, RPCs, authentication settings, storage policies, and RLS policies in the target Supabase
+project before relying on backend-dependent features. Client-side checks are not an authorization
+boundary.
 
 ## Booking workflow status
 
@@ -251,18 +206,13 @@ boundary. Supabase RLS and server-side role checks must remain authoritative for
 read and write. The repository has no database migrations or deployment configuration; do not
 deploy it as a production service until backend policies, auth flows, secrets, and hosting
 settings have been reviewed and configured.
+
 Without Supabase configuration, the development build may use clearly labelled local demo data.
 Production builds reject local fallback reads and writes for resource and organisation services.
 Several organisation registration and verification write operations still lack backend persistence
 and return an explicit unavailable error when Supabase is configured.
-The current frontend test suite covers notification list rendering, filters, read updates, and
-backend error handling. It does not replace authenticated end-to-end testing against a configured
-backend.
+The frontend test suite covers selected UI and service behavior; it does not replace authenticated
+end-to-end testing against a configured backend.
 
-The other remote feature branches currently have no commits beyond the common ancestor of this
-checkout, so there were no branch-specific changes to merge during this pass. `origin/main` has a
-separate scaffold commit from that ancestor; its tree removes current booking, resource, and
-organisation implementations, so it was not merged to avoid discarding working functionality.
-Production deployment was not attempted because no hosting target or production credentials are
-configured.
->>>>>>> origin/feature/ui-design
+Production deployment has not been attempted because no hosting target or production credentials
+are configured. Never commit `.env`, `.env.local`, API keys, passwords, or database credentials.
