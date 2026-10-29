@@ -22,6 +22,7 @@ import {
   MyBookingsPage,
   BookingDetailPage,
   MyRequestsPage,
+  WaitingListPage,
   NotificationsPage,
   UserSettingsPage,
 } from '@/pages/dashboard'
@@ -79,6 +80,7 @@ export function App() {
         <Route path="bookings" element={<MyBookingsPage />} />
         <Route path="bookings/:id" element={<BookingDetailPage />} />
         <Route path="requests" element={<MyRequestsPage />} />
+        <Route path="waiting-list" element={<WaitingListPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<UserSettingsPage />} />
       </Route>

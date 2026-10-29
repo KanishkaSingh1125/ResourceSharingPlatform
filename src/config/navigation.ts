@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Search,
   CalendarDays,
+  ListChecks,
   Send,
   Package,
   Building2,
@@ -137,6 +138,14 @@ export const ALL_NAVIGATION_ITEMS: NavigationItem[] = [
     icon: Send,
     roles: ['member'],
     badge: { text: '1 Pending', variant: 'warning' },
+    section: 'main',
+  },
+  {
+    id: 'waiting-list',
+    label: 'Waiting List',
+    to: '/dashboard/waiting-list',
+    icon: ListChecks,
+    roles: ['member', 'manager', 'org_admin'],
     section: 'main',
   },
 
@@ -325,4 +334,3 @@ export const BOTTOM_UTILITY_ITEMS = [
 export function getNavigationForRole(role: UserRole): NavigationItem[] {
   return ALL_NAVIGATION_ITEMS.filter((item) => item.roles.includes(role))
 }
-

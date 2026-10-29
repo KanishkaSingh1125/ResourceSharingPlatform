@@ -192,6 +192,14 @@ export function ResourceDetailPage() {
             <Calendar className="h-3.5 w-3.5 mr-1" />
             Request Booking
           </Button>
+          {!isAvailable && (
+            <Link
+              to={`/dashboard/waiting-list?resource=${encodeURIComponent(resource.id)}`}
+              className="inline-flex items-center justify-center rounded-md border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-100"
+            >
+              Join waiting list
+            </Link>
+          )}
         </div>
       </div>
 

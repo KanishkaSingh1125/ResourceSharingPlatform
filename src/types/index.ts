@@ -8,4 +8,4 @@ export * from './booking'
 export * from './eligibility'
 export * from './notification'
 export * from './reportIncident'
-
+export * from './waitingList'
