@@ -1,19 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar, MobileNavigation, DashboardHeader } from '@/components/navigation'
 import { useRole } from '@/context'
 
 export function AdminLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { isCollapsed, currentRole, setRole } = useRole()
+  const { isCollapsed } = useRole()
   const navigate = useNavigate()
-
-  // Ensure role is platform_admin when entering platform administrator panel
-  useEffect(() => {
-    if (currentRole !== 'platform_admin') {
-      setRole('platform_admin')
-    }
-  }, [currentRole, setRole])
 
   return (
     <div className="flex min-h-screen bg-neutral-50 text-neutral-900">

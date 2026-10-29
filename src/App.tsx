@@ -1,4 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
+import { ProtectedRoute } from '@/components/navigation'
 
 // Layouts
 import { PublicLayout, DashboardLayout, OrgLayout, AdminLayout } from '@/layouts'
@@ -73,44 +74,50 @@ export function App() {
       </Route>
 
       {/* ── User dashboard ───────────────────────────── */}
-      <Route path="dashboard" element={<DashboardLayout />}>
-        <Route index element={<DashboardOverview />} />
-        <Route path="discover" element={<DiscoverPage />} />
-        <Route path="resources/:id" element={<ResourceDetailPage />} />
-        <Route path="bookings" element={<MyBookingsPage />} />
-        <Route path="bookings/:id" element={<BookingDetailPage />} />
-        <Route path="requests" element={<MyRequestsPage />} />
-        <Route path="waiting-list" element={<WaitingListPage />} />
-        <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="settings" element={<UserSettingsPage />} />
+      <Route element={<ProtectedRoute allowedRoles={['member', 'manager', 'org_admin']} />}>
+        <Route path="dashboard" element={<DashboardLayout />}>
+          <Route index element={<DashboardOverview />} />
+          <Route path="discover" element={<DiscoverPage />} />
+          <Route path="resources/:id" element={<ResourceDetailPage />} />
+          <Route path="bookings" element={<MyBookingsPage />} />
+          <Route path="bookings/:id" element={<BookingDetailPage />} />
+          <Route path="requests" element={<MyRequestsPage />} />
+          <Route path="waiting-list" element={<WaitingListPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="settings" element={<UserSettingsPage />} />
+        </Route>
       </Route>
 
       {/* ── Organisation workspace ───────────────────── */}
-      <Route path="org" element={<OrgLayout />}>
-        <Route index element={<OrgWorkspace />} />
-        <Route path="resources" element={<OrgResourcesPage />} />
-        <Route path="bookings" element={<OrgBookingsPage />} />
-        <Route path="condition-reports" element={<ConditionReportsPage />} />
-        <Route path="incidents" element={<OrgIncidentsPage />} />
-        <Route path="members" element={<OrgMembersPage />} />
-        <Route path="verification" element={<OrgVerificationPage />} />
-        <Route path="analytics" element={<OrgAnalyticsPage />} />
-        <Route path="audit-logs" element={<OrgAuditLogsPage />} />
-        <Route path="settings" element={<OrgSettingsPage />} />
+      <Route element={<ProtectedRoute allowedRoles={['manager', 'org_admin', 'platform_admin']} />}>
+        <Route path="org" element={<OrgLayout />}>
+          <Route index element={<OrgWorkspace />} />
+          <Route path="resources" element={<OrgResourcesPage />} />
+          <Route path="bookings" element={<OrgBookingsPage />} />
+          <Route path="condition-reports" element={<ConditionReportsPage />} />
+          <Route path="incidents" element={<OrgIncidentsPage />} />
+          <Route path="members" element={<OrgMembersPage />} />
+          <Route path="verification" element={<OrgVerificationPage />} />
+          <Route path="analytics" element={<OrgAnalyticsPage />} />
+          <Route path="audit-logs" element={<OrgAuditLogsPage />} />
+          <Route path="settings" element={<OrgSettingsPage />} />
+        </Route>
       </Route>
 
       {/* ── Admin panel ──────────────────────────────── */}
-      <Route path="admin" element={<AdminLayout />}>
-        <Route index element={<AdminHome />} />
-        <Route path="verification-queue" element={<AdminVerificationQueuePage />} />
-        <Route path="organisations" element={<AdminOrgsPage />} />
-        <Route path="users" element={<AdminUsersPage />} />
-        <Route path="monitoring" element={<AdminMonitoringPage />} />
-        <Route path="incidents" element={<AdminIncidentsPage />} />
-        <Route path="analytics" element={<AdminAnalyticsPage />} />
-        <Route path="reports" element={<AdminReportsPage />} />
-        <Route path="audit-logs" element={<AdminAuditLogsPage />} />
-        <Route path="settings" element={<AdminSettingsPage />} />
+      <Route element={<ProtectedRoute allowedRoles={['platform_admin']} />}>
+        <Route path="admin" element={<AdminLayout />}>
+          <Route index element={<AdminHome />} />
+          <Route path="verification-queue" element={<AdminVerificationQueuePage />} />
+          <Route path="organisations" element={<AdminOrgsPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="monitoring" element={<AdminMonitoringPage />} />
+          <Route path="incidents" element={<AdminIncidentsPage />} />
+          <Route path="analytics" element={<AdminAnalyticsPage />} />
+          <Route path="reports" element={<AdminReportsPage />} />
+          <Route path="audit-logs" element={<AdminAuditLogsPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
+        </Route>
       </Route>
 
       {/* ── Catch-all ────────────────────────────────── */}

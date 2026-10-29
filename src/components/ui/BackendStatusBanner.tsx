@@ -14,9 +14,9 @@ export function BackendStatusBanner() {
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
           <span>
-            Connected to Supabase PostgreSQL Backend (
+            Supabase configuration detected (
             <strong className="font-mono">{status.urlDomain || 'live instance'}</strong>
-            ) with Row Level Security.
+            ). This does not verify database policies or service availability.
           </span>
         </div>
         <button
@@ -34,7 +34,8 @@ export function BackendStatusBanner() {
       <div className="flex items-center gap-2 min-w-0">
         <Database className="h-3.5 w-3.5 text-amber-600 shrink-0" />
         <span className="truncate">
-          Local-First Engine Active — Supabase credentials not detected in <code className="bg-amber-100 px-1 rounded">.env</code>. All data is persisted locally with full schema fidelity.
+          Supabase is not configured. Protected data and authenticated actions are unavailable;
+          local demo data is not production data.
         </span>
       </div>
       <div className="flex items-center gap-3 shrink-0 ml-2">

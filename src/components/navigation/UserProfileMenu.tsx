@@ -6,12 +6,11 @@ import {
   Shield,
   ChevronDown,
   Building2,
-  Check,
   HelpCircle,
 } from 'lucide-react'
 import { useRole } from '@/context'
 import { ROLE_DEFINITIONS } from '@/config/navigation'
-import { type UserRole } from '@/types/navigation'
+import { signOut } from '@/services/authService'
 
 interface UserProfileMenuProps {
   isCollapsed?: boolean
@@ -21,8 +20,10 @@ interface UserProfileMenuProps {
 export function UserProfileMenu({ isCollapsed = false, align = 'top' }: UserProfileMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const { currentRole, setRole, userProfile } = useRole()
+  const { currentRole, userProfile } = useRole()
   const navigate = useNavigate()
+  const [logoutError, setLogoutError] = useState<string | null>(null)
+  const [loggingOut, setLoggingOut] = useState(false)
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -33,20 +34,6 @@ export function UserProfileMenu({ isCollapsed = false, align = 'top' }: UserProf
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
-
-  const handleRoleChange = (role: UserRole) => {
-    setRole(role)
-    const targetHome = ROLE_DEFINITIONS[role].homePath
-    navigate(targetHome)
-    setIsOpen(false)
-  }
-
-  const roleOptions: UserRole[] = [
-    'member',
-    'manager',
-    'org_admin',
-    'platform_admin',
-  ]
 
   return (
     <div ref={menuRef} className="relative w-full">
@@ -131,49 +118,9 @@ export function UserProfileMenu({ isCollapsed = false, align = 'top' }: UserProf
             </div>
           </div>
 
-          {/* Role Switcher Section */}
-          <div className="p-1 mb-2">
-            <div className="flex items-center justify-between px-2 py-1 mb-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                Switch Role / Preview
-              </span>
-              <span className="text-[10px] text-brand-600 font-medium">Demo Mode</span>
-            </div>
-
-            <div className="space-y-1">
-              {roleOptions.map((role) => {
-                const isSelected = role === currentRole
-                const def = ROLE_DEFINITIONS[role]
-
-                return (
-                  <button
-                    key={role}
-                    type="button"
-                    onClick={() => handleRoleChange(role)}
-                    className={`flex w-full items-start justify-between rounded-lg p-2 text-left transition-all ${
-                      isSelected
-                        ? 'bg-brand-50 text-brand-900 ring-1 ring-brand-300'
-                        : 'text-neutral-700 hover:bg-neutral-100'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold leading-tight">
-                        {def.label}
-                      </p>
-                      <p className="text-[10px] text-neutral-500 mt-0.5 truncate max-w-[200px]">
-                        {def.description}
-                      </p>
-                    </div>
-                    {isSelected && (
-                      <Check className="h-4 w-4 shrink-0 text-brand-600 mt-0.5" />
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <hr className="my-1 border-neutral-100" />
+          {logoutError && (
+            <p className="px-2 py-1 text-xs text-red-700" role="alert">{logoutError}</p>
+          )}
 
           {/* Account & Support links */}
           <div className="space-y-0.5 p-1">
@@ -211,11 +158,21 @@ export function UserProfileMenu({ isCollapsed = false, align = 'top' }: UserProf
           <div className="p-1">
             <button
               type="button"
-              onClick={() => {
-                setIsOpen(false)
-                navigate('/login')
+              disabled={loggingOut}
+              onClick={async () => {
+                setLoggingOut(true)
+                setLogoutError(null)
+                try {
+                  await signOut()
+                  setIsOpen(false)
+                  navigate('/login', { replace: true })
+                } catch (error) {
+                  setLogoutError(error instanceof Error ? error.message : 'Sign out failed.')
+                } finally {
+                  setLoggingOut(false)
+                }
               }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
             >
               <LogOut className="h-3.5 w-3.5" />
               <span>Sign out</span>

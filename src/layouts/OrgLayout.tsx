@@ -1,19 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar, MobileNavigation, DashboardHeader } from '@/components/navigation'
 import { useRole } from '@/context'
 
 export function OrgLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { isCollapsed, currentRole, setRole } = useRole()
+  const { isCollapsed } = useRole()
   const navigate = useNavigate()
-
-  // Ensure role is at least manager or org_admin when entering organisation workspace
-  useEffect(() => {
-    if (currentRole === 'member') {
-      setRole('org_admin')
-    }
-  }, [currentRole, setRole])
 
   return (
     <div className="flex min-h-screen bg-neutral-50 text-neutral-900">

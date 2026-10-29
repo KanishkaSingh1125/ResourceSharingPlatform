@@ -14,7 +14,7 @@ npm run lint
 npm test
 ```
 
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in a local `.env` file to connect to Supabase. Booking actions require an authenticated Supabase session and the database tables and row-level security policies configured for the account. The repository currently does not include database migrations or a sign-in UI.
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in a local `.env` file to connect to Supabase. Sign-in and protected pages require an authenticated Supabase session and a persisted `profiles` row. This repository does not include database migrations; configure and verify the backend schema and row-level security policies separately.
 
 ## Booking workflow status
 
@@ -68,11 +68,17 @@ passport, cross-organisation credential sharing, consent revocation, and renewal
 be safely enabled until those records and server-enforced policies exist. No universal trust score
 is used.
 
-The application has no sign-in page implementation or route-level authentication guard. The
-development role selector is not authorization. Supabase RLS and server-side role checks must
-remain authoritative for every protected read and write. The repository has no database
-migrations or deployment configuration; do not deploy it as a production service until those
-backend policies, auth flows, secrets, and hosting settings have been reviewed and configured.
+The sign-in page uses Supabase email/password authentication. Dashboard, organisation, and admin
+routes use authenticated profile roles; the former client-side role switch and automatic role
+elevation have been removed. Frontend route checks improve UX only and are not an authorization
+boundary. Supabase RLS and server-side role checks must remain authoritative for every protected
+read and write. The repository has no database migrations or deployment configuration; do not
+deploy it as a production service until backend policies, auth flows, secrets, and hosting
+settings have been reviewed and configured.
+Without Supabase configuration, the development build may use clearly labelled local demo data.
+Production builds reject local fallback reads and writes for resource and organisation services.
+Several organisation registration and verification write operations still lack backend persistence
+and return an explicit unavailable error when Supabase is configured.
 The current frontend test suite covers notification list rendering, filters, read updates, and
 backend error handling. It does not replace authenticated end-to-end testing against a configured
 backend.

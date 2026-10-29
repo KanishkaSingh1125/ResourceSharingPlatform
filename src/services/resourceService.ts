@@ -5,7 +5,7 @@ import {
   type ResourceFilterParams,
   type ResourceUpdateInput,
 } from '@/types/resource'
-import { type PaginatedResult } from '@/types/serviceCommon'
+import { requireBackendInProduction, type PaginatedResult } from '@/types/serviceCommon'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 
 const STORAGE_KEY_RESOURCES = 'sharesphere_resources_v1'
@@ -639,6 +639,7 @@ function saveStoredResources(data: Record<string, Resource>): void {
 export async function getResources(
   filters: ResourceFilterParams = {}
 ): Promise<PaginatedResult<Resource>> {
+  requireBackendInProduction('The resource catalogue')
   const {
     search,
     category,
@@ -848,6 +849,7 @@ export async function getResources(
 }
 
 export async function getResourceById(id: string): Promise<Resource | null> {
+  requireBackendInProduction('Resource details')
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
@@ -900,11 +902,13 @@ export async function getResourceById(id: string): Promise<Resource | null> {
 }
 
 export async function getResourceBySlug(slug: string): Promise<Resource | null> {
+  requireBackendInProduction('Resource details')
   const store = getStoredResources()
   return Object.values(store).find((r) => r.slug === slug) || null
 }
 
 export async function createResource(input: ResourceCreateInput): Promise<Resource> {
+  requireBackendInProduction('Resource management')
   const now = new Date().toISOString()
   const id = `res-${Date.now()}`
   const slug = input.title
@@ -953,6 +957,7 @@ export async function updateResource(
   id: string,
   input: ResourceUpdateInput
 ): Promise<Resource> {
+  requireBackendInProduction('Resource management')
   const store = getStoredResources()
   const existing = store[id]
   if (!existing) {
@@ -986,6 +991,7 @@ export async function updateResource(
 }
 
 export async function deleteResource(id: string): Promise<boolean> {
+  requireBackendInProduction('Resource management')
   const store = getStoredResources()
   if (!store[id]) return false
   delete store[id]
@@ -994,6 +1000,7 @@ export async function deleteResource(id: string): Promise<boolean> {
 }
 
 export async function getResourceCategories(): Promise<{ category: ResourceCategory; count: number }[]> {
+  requireBackendInProduction('Resource categories')
   const store = getStoredResources()
   const counts: Record<string, number> = {}
 

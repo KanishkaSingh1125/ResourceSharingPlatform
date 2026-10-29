@@ -18,7 +18,7 @@ import {
   HelpCircle,
   Eye,
 } from 'lucide-react'
-import { type NavigationItem, type UserRole, type UserProfile } from '@/types/navigation'
+import { type NavigationItem, type UserRole } from '@/types/navigation'
 
 export const ROLE_DEFINITIONS: Record<
   UserRole,
@@ -47,41 +47,6 @@ export const ROLE_DEFINITIONS: Record<
     description: 'Global system oversight, verification queue, and compliance.',
     homePath: '/admin',
     badgeVariant: 'error',
-  },
-}
-
-export const MOCK_USER_PROFILES: Record<UserRole, UserProfile> = {
-  member: {
-    name: 'Dr. Sarah Connor',
-    email: 's.connor@mit.edu',
-    role: 'member',
-    roleLabel: 'Researcher',
-    organisation: 'MIT Nanotech Core Lab',
-    orgType: 'Academic Institution',
-  },
-  manager: {
-    name: 'Marcus Vance',
-    email: 'm.vance@mit.edu',
-    role: 'manager',
-    roleLabel: 'Equipment Manager',
-    organisation: 'MIT Nanotech Core Lab',
-    orgType: 'Academic Institution',
-  },
-  org_admin: {
-    name: 'Prof. Alan Turing',
-    email: 'turing@mit.edu',
-    role: 'org_admin',
-    roleLabel: 'Lab Director & Admin',
-    organisation: 'MIT Nanotech Core Lab',
-    orgType: 'Academic Institution',
-  },
-  platform_admin: {
-    name: 'Platform Custodian',
-    email: 'custodian@sharesphere.internal',
-    role: 'platform_admin',
-    roleLabel: 'Super Administrator',
-    organisation: 'ShareSphere Foundation',
-    orgType: 'Governance & Trust',
   },
 }
 
@@ -128,7 +93,6 @@ export const ALL_NAVIGATION_ITEMS: NavigationItem[] = [
     to: '/dashboard/bookings',
     icon: CalendarDays,
     roles: ['member', 'manager', 'org_admin'],
-    badge: { text: '2 Active', variant: 'primary' },
     section: 'main',
   },
   {
@@ -137,7 +101,6 @@ export const ALL_NAVIGATION_ITEMS: NavigationItem[] = [
     to: '/dashboard/requests',
     icon: Send,
     roles: ['member'],
-    badge: { text: '1 Pending', variant: 'warning' },
     section: 'main',
   },
   {
@@ -164,7 +127,6 @@ export const ALL_NAVIGATION_ITEMS: NavigationItem[] = [
     to: '/org/bookings',
     icon: ClipboardCheck,
     roles: ['manager', 'org_admin'],
-    badge: { text: '3 New', variant: 'warning' },
     section: 'management',
   },
   {

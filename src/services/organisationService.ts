@@ -9,6 +9,8 @@ import {
   type OutstandingAction,
 } from '@/types/organisation'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { requireBackendInProduction } from '@/types/serviceCommon'
+import { getCurrentProfile } from './authService'
 
 const STORAGE_KEY_ORGS = 'sharesphere_organisations_v1'
 const STORAGE_KEY_CURRENT_ORG_ID = 'sharesphere_active_org_id'
@@ -157,6 +159,7 @@ function saveStoredOrganisations(orgs: Record<string, Organisation>) {
  * Get current active organisation ID
  */
 export function getCurrentOrganisationId(): string {
+  requireBackendInProduction('Organisation data')
   const storedId = localStorage.getItem(STORAGE_KEY_CURRENT_ORG_ID)
   if (storedId) return storedId
   // Default to seed organization
@@ -168,6 +171,7 @@ export function getCurrentOrganisationId(): string {
  * Switch active organisation (for testing multiple org verification states)
  */
 export function setCurrentOrganisationId(orgId: string): void {
+  requireBackendInProduction('Organisation data')
   localStorage.setItem(STORAGE_KEY_CURRENT_ORG_ID, orgId)
 }
 
@@ -175,11 +179,16 @@ export function setCurrentOrganisationId(orgId: string): void {
  * Fetch current organisation details
  */
 export async function getCurrentOrganisation(): Promise<Organisation> {
+  requireBackendInProduction('Organisation data')
+  if (isSupabaseConfigured) {
+    const profile = await getCurrentProfile()
+    const organisation = await getOrganisationById(profile.organisationId)
+    if (!organisation) throw new Error('Your organisation record is unavailable.')
+    return organisation
+  }
   const orgId = getCurrentOrganisationId()
   const org = await getOrganisationById(orgId)
-  if (!org) {
-    return SEED_ORGANISATION
-  }
+  if (!org) throw new Error('No organisation is available for the current account.')
   return org
 }
 
@@ -187,23 +196,21 @@ export async function getCurrentOrganisation(): Promise<Organisation> {
  * Fetch organisation by ID
  */
 export async function getOrganisationById(orgId: string): Promise<Organisation | null> {
+  requireBackendInProduction('Organisation data')
   if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase
-        .from('organisations')
-        .select('*')
-        .eq('id', orgId)
-        .single()
-
-      if (!error && data) {
-        return data as Organisation
-      }
-    } catch {
-      // Fallback gracefully to local persistent store
+    const { data, error } = await supabase
+      .from('organisations')
+      .select('*')
+      .eq('id', orgId)
+      .maybeSingle()
+    if (error) {
+      console.error('Could not load organisation data.', error)
+      throw new Error('Organisation data could not be loaded.')
     }
+    return data as Organisation | null
   }
 
-  // Local persistent repository
+  if (import.meta.env.PROD) throw new Error('Organisation data requires a configured backend.')
   const orgs = getStoredOrganisations()
   return orgs[orgId] || null
 }
@@ -212,21 +219,20 @@ export async function getOrganisationById(orgId: string): Promise<Organisation |
  * Get all registered organisations (admin list)
  */
 export async function getAllOrganisations(): Promise<Organisation[]> {
+  requireBackendInProduction('Organisation data')
   if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase
-        .from('organisations')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (!error && data) {
-        return data as Organisation[]
-      }
-    } catch {
-      // Fallback
+    const { data, error } = await supabase
+      .from('organisations')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) {
+      console.error('Could not load organisation records.', error)
+      throw new Error('Organisations could not be loaded.')
     }
+    return (data || []) as Organisation[]
   }
 
+  if (import.meta.env.PROD) throw new Error('Organisation data requires a configured backend.')
   const orgs = getStoredOrganisations()
   return Object.values(orgs)
 }
@@ -240,6 +246,10 @@ export async function uploadVerificationDocument(
   documentType: DocumentType,
   file: File
 ): Promise<VerificationDocument> {
+  requireBackendInProduction('Verification document uploads')
+  if (isSupabaseConfigured) {
+    throw new Error('Verification uploads cannot be completed until the backend records the document metadata.')
+  }
   // Validate file parameters
   const MAX_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
   if (file.size > MAX_SIZE_BYTES) {
@@ -250,20 +260,18 @@ export async function uploadVerificationDocument(
   const storagePath = `organisation-documents/${orgId}/${documentType}/${Date.now()}_${sanitizedFileName}`
 
   if (isSupabaseConfigured) {
-    try {
-      const { error: uploadError } = await supabase.storage
-        .from('organisation-documents')
-        .upload(storagePath, file, {
-          cacheControl: '3600',
-          upsert: false,
-        })
-
-      if (uploadError) {
-        throw new Error(uploadError.message)
-      }
-    } catch (err) {
-      console.warn('Supabase storage upload failed or not configured, falling back to local vault:', err)
+    const { error: uploadError } = await supabase.storage
+      .from('organisation-documents')
+      .upload(storagePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+      })
+    if (uploadError) {
+      console.error('Verification document upload failed.', uploadError)
+      throw new Error('The verification document could not be uploaded.')
     }
+  } else if (import.meta.env.PROD) {
+    throw new Error('Verification document uploads require a configured backend.')
   }
 
   // Construct document record
@@ -289,6 +297,10 @@ export async function saveOrganisationDraft(
   input: Partial<OrganisationRegistrationInput>,
   existingOrgId?: string
 ): Promise<Organisation> {
+  requireBackendInProduction('Organisation registration')
+  if (isSupabaseConfigured) {
+    throw new Error('Organisation draft persistence is not available in the configured backend.')
+  }
   const orgs = getStoredOrganisations()
   const now = new Date().toISOString()
   const orgId = existingOrgId || `org-${Date.now()}`
@@ -361,6 +373,10 @@ export async function submitOrganisationRegistration(
   input: OrganisationRegistrationInput,
   draftId?: string
 ): Promise<Organisation> {
+  requireBackendInProduction('Organisation registration')
+  if (isSupabaseConfigured) {
+    throw new Error('Organisation registration persistence is not available in the configured backend.')
+  }
   const orgs = getStoredOrganisations()
   const now = new Date().toISOString()
   const orgId = draftId || `org-${Date.now()}`
@@ -447,6 +463,10 @@ export async function resubmitOrganisationVerification(
   orgId: string,
   input: ResubmissionInput
 ): Promise<Organisation> {
+  requireBackendInProduction('Organisation verification')
+  if (isSupabaseConfigured) {
+    throw new Error('Verification resubmission is not available in the configured backend.')
+  }
   const orgs = getStoredOrganisations()
   const org = orgs[orgId]
 
@@ -502,6 +522,10 @@ export async function setOrganisationVerificationStatus(
   reviewerNote?: string,
   requestedActions?: OutstandingAction[]
 ): Promise<Organisation> {
+  requireBackendInProduction('Organisation verification')
+  if (isSupabaseConfigured) {
+    throw new Error('Verification decisions require a protected backend operation that is not configured.')
+  }
   const orgs = getStoredOrganisations()
   const org = orgs[orgId]
 
@@ -553,6 +577,10 @@ export async function updateOrganisationProfile(
   orgId: string,
   updates: Partial<Organisation>
 ): Promise<Organisation> {
+  requireBackendInProduction('Organisation management')
+  if (isSupabaseConfigured) {
+    throw new Error('Organisation profile updates are not available in the configured backend.')
+  }
   const orgs = getStoredOrganisations()
   const org = orgs[orgId]
 
@@ -633,29 +661,28 @@ function saveStoredMemberships(data: Record<string, OrganisationMembership[]>) {
 }
 
 export async function getOrganisationMembers(orgId: string): Promise<OrganisationMembership[]> {
+  requireBackendInProduction('Organisation memberships')
   if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase
-        .from('organisation_memberships')
-        .select('*')
-        .eq('organisation_id', orgId)
-
-      if (!error && data) {
-        return data.map((d) => ({
-          id: d.id,
-          organisationId: d.organisation_id,
-          organisationName: 'Member Org',
-          userId: d.user_id,
-          role: (d.role as UserRole) || 'member',
-          status: (d.status as 'active' | 'invited' | 'suspended') || 'active',
-          joinedAt: d.joined_at,
-        }))
-      }
-    } catch {
-      // fallback
+    const { data, error } = await supabase
+      .from('organisation_memberships')
+      .select('*')
+      .eq('organisation_id', orgId)
+    if (error) {
+      console.error('Could not load organisation membership records.', error)
+      throw new Error('Organisation members could not be loaded.')
     }
+    return (data || []).map((d) => ({
+      id: d.id,
+      organisationId: d.organisation_id,
+      organisationName: 'Organisation',
+      userId: d.user_id,
+      role: d.role as UserRole,
+      status: d.status as 'active' | 'invited' | 'suspended',
+      joinedAt: d.joined_at,
+    }))
   }
 
+  if (import.meta.env.PROD) throw new Error('Organisation memberships require a configured backend.')
   const store = getStoredMemberships()
   return store[orgId] || []
 }
@@ -664,6 +691,10 @@ export async function addOrganisationMember(
   orgId: string,
   input: { userId: string; role: UserRole; organisationName?: string }
 ): Promise<OrganisationMembership> {
+  requireBackendInProduction('Organisation memberships')
+  if (isSupabaseConfigured) {
+    throw new Error('Adding organisation members is not available in the configured backend.')
+  }
   const newMember: OrganisationMembership = {
     id: `mem-${Date.now()}`,
     organisationId: orgId,
@@ -687,6 +718,10 @@ export async function updateMemberRole(
   membershipId: string,
   newRole: UserRole
 ): Promise<OrganisationMembership | null> {
+  requireBackendInProduction('Organisation memberships')
+  if (isSupabaseConfigured) {
+    throw new Error('Changing member roles requires a protected backend operation that is not configured.')
+  }
   const store = getStoredMemberships()
   const list = store[orgId] || []
   let updatedMember: OrganisationMembership | null = null

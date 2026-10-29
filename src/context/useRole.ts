@@ -10,8 +10,11 @@ import {
 
 export interface RoleContextType {
   currentRole: UserRole
-  setRole: (role: UserRole) => void
   userProfile: UserProfile
+  isAuthenticated: boolean
+  isLoading: boolean
+  authError: string | null
+  refreshProfile: () => Promise<void>
   roleMeta: (typeof ROLE_DEFINITIONS)[UserRole]
   navItems: ReturnType<typeof getNavigationForRole>
   isCollapsed: boolean
@@ -28,4 +31,3 @@ export function useRole(): RoleContextType {
   }
   return context
 }
-

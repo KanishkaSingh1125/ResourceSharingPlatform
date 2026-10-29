@@ -6,6 +6,7 @@ export * from './MobileNavigation'
 export * from './UserProfileMenu'
 export * from './DashboardHeader'
 export * from './NotificationDropdown'
+export * from './ProtectedRoute'
 
 // Backwards-compatible aliases
 export { Sidebar as DashboardSidebar } from './Sidebar'

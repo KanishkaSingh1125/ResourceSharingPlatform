@@ -4,12 +4,23 @@ export type { Database } from '@/types/database'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
-export const isSupabaseConfigured = Boolean(
-  supabaseUrl &&
-  supabaseAnonKey &&
-  supabaseUrl.trim() !== '' &&
-  supabaseAnonKey.trim() !== ''
-)
+function getValidSupabaseUrl(value?: string): URL | null {
+  if (!value?.trim()) return null
+  try {
+    const url = new URL(value.trim())
+    const secure = url.protocol === 'https:'
+    const localDevelopmentUrl =
+      url.protocol === 'http:' &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    return secure || localDevelopmentUrl ? url : null
+  } catch {
+    return null
+  }
+}
+
+const parsedSupabaseUrl = getValidSupabaseUrl(supabaseUrl)
+const hasAnonKey = Boolean(supabaseAnonKey?.trim())
+export const isSupabaseConfigured = Boolean(parsedSupabaseUrl && hasAnonKey)
 
 export interface SupabaseConfigStatus {
   isConfigured: boolean
@@ -21,9 +32,9 @@ export interface SupabaseConfigStatus {
 export function getSupabaseConfigStatus(): SupabaseConfigStatus {
   return {
     isConfigured: isSupabaseConfigured,
-    hasUrl: Boolean(supabaseUrl && supabaseUrl.trim() !== ''),
-    hasAnonKey: Boolean(supabaseAnonKey && supabaseAnonKey.trim() !== ''),
-    urlDomain: supabaseUrl ? new URL(supabaseUrl).hostname : undefined,
+    hasUrl: Boolean(parsedSupabaseUrl),
+    hasAnonKey,
+    urlDomain: parsedSupabaseUrl?.hostname,
   }
 }
 

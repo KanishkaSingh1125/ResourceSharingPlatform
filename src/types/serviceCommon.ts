@@ -1,3 +1,5 @@
+import { isSupabaseConfigured } from '@/lib/supabase'
+
 export interface ServiceError {
   code: string
   message: string
@@ -24,3 +26,8 @@ export interface PaginatedResult<T> {
 
 export type SortDirection = 'asc' | 'desc'
 
+export function requireBackendInProduction(operation: string): void {
+  if (import.meta.env.PROD && !isSupabaseConfigured) {
+    throw new Error(`${operation} requires a configured backend.`)
+  }
+}
