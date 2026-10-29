@@ -73,25 +73,20 @@ export async function updateResource(id: string, updates: UpdateResourceInput) {
  */
 export async function searchResources(
   filters: ResourceSearchFilters = {}
-): Promise<PaginatedResponse<Resource>> {
+): Promise<PaginatedResponse<Resource> & { error: string | null }> {
   const page = filters.page ?? 1
   const pageSize = filters.pageSize ?? 20
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
-
-  let query = supabase
-    .from('resources')
-    .select(
-      '*, organisations!inner(name, slug, verification_status), resource_categories(name, slug, icon)',
-      { count: 'exact' }
-    )
+  let query = supabase.from('resources').select<any>('*,organisations(name,slug,verification_status),resource_categories(name,slug,icon)', { count: 'exact' })
     .eq('publication_status', 'published')
     .eq('organisations.verification_status', 'approved')
     .range(from, to)
 
   // Apply filters
-  if (filters.query) {
-    query = query.or(`name.ilike.%${filters.query}%,description.ilike.%${filters.query}%`)
+  const searchTerm = filters.query?.trim().replace(/[(),]/g, ' ').replace(/\s+/g, ' ').slice(0, 100)
+  if (searchTerm) {
+    query = query.or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
   }
   if (filters.category_id) {
     query = query.eq('category_id', filters.category_id)
@@ -111,14 +106,28 @@ export async function searchResources(
   const sortOrder = filters.sortOrder ?? 'desc'
   query = query.order(sortBy, { ascending: sortOrder === 'asc' })
 
-  const { data, count } = await query
+  try {
+    const { data, count, error } = await query
 
-  return {
-    data: (data ?? []) as Resource[],
-    count: count ?? 0,
-    page,
-    pageSize,
-    hasMore: (count ?? 0) > page * pageSize,
+
+    return {
+      data: error ? [] : ((data ?? []) as unknown as Resource[]),
+      count: error ? 0 : count ?? 0,
+      page,
+      pageSize,
+      hasMore: !error && (count ?? 0) > page * pageSize,
+      error: error?.message ?? null,
+    }
+  } catch (error) {
+    console.error('searchResources catch error', error)
+    return {
+      data: [],
+      count: 0,
+      page,
+      pageSize,
+      hasMore: false,
+      error: error instanceof Error ? error.message : 'Could not load resources.',
+    }
   }
 }
 
