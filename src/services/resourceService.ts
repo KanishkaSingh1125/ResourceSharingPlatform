@@ -7,8 +7,94 @@ import {
 } from '@/types/resource'
 import { requireBackendInProduction, type PaginatedResult } from '@/types/serviceCommon'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { getCurrentProfile } from './authService'
+import { getOrganisationById } from './organisationService'
+import type { Database, Json } from '@/types/database'
+import type { ResourceLocation, ResourceOperatingHours, ResourceRate } from '@/types/resource'
 
 const STORAGE_KEY_RESOURCES = 'sharesphere_resources_v1'
+type ResourceRow = Database['public']['Tables']['resources']['Row']
+type ResourceOrganisationRow = Pick<
+  Database['public']['Tables']['organisations']['Row'],
+  'id' | 'name' | 'slug' | 'type' | 'verification_status'
+>
+
+function isJsonObject(value: Json | undefined): value is { [key: string]: Json | undefined } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function parseResourceLocation(value: Json): ResourceLocation {
+  if (
+    !isJsonObject(value) ||
+    typeof value.campus !== 'string' ||
+    typeof value.building !== 'string' ||
+    typeof value.address !== 'string' ||
+    typeof value.city !== 'string'
+  ) {
+    throw new Error('Resource location data is invalid.')
+  }
+  const coordinates = value.coordinates
+  return {
+    campus: value.campus,
+    building: value.building,
+    address: value.address,
+    city: value.city,
+    ...(typeof value.room === 'string' ? { room: value.room } : {}),
+    ...(typeof value.state === 'string' ? { state: value.state } : {}),
+    ...(typeof value.country === 'string' ? { country: value.country } : {}),
+    ...(isJsonObject(coordinates) &&
+    typeof coordinates.lat === 'number' &&
+    typeof coordinates.lng === 'number'
+      ? { coordinates: { lat: coordinates.lat, lng: coordinates.lng } }
+      : {}),
+  }
+}
+
+function parseResourceRate(value: Json): ResourceRate {
+  if (
+    !isJsonObject(value) ||
+    typeof value.amount !== 'number' ||
+    typeof value.currency !== 'string' ||
+    !['hour', 'day', 'slot', 'free'].includes(String(value.unit))
+  ) {
+    throw new Error('Resource rate data is invalid.')
+  }
+  return {
+    amount: value.amount,
+    unit: value.unit as ResourceRate['unit'],
+    currency: value.currency,
+  }
+}
+
+function parseStringArray(value: Json, label: string): string[] {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(`Resource ${label} data is invalid.`)
+  }
+  return value
+}
+
+function parseSpecifications(value: Json): Record<string, string> {
+  if (!isJsonObject(value) || !Object.values(value).every((item) => typeof item === 'string')) {
+    throw new Error('Resource specifications data is invalid.')
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  )
+}
+
+function parseOperatingHours(value: Json | null): ResourceOperatingHours | undefined {
+  if (value === null) return undefined
+  if (
+    !isJsonObject(value) ||
+    !Array.isArray(value.days) ||
+    !value.days.every((day) => typeof day === 'string') ||
+    typeof value.openTime !== 'string' ||
+    typeof value.closeTime !== 'string'
+  ) {
+    throw new Error('Resource operating hours data is invalid.')
+  }
+  return { days: value.days, openTime: value.openTime, closeTime: value.closeTime }
+}
 
 export const SEED_RESOURCES: Resource[] = [
   {
@@ -636,6 +722,102 @@ function saveStoredResources(data: Record<string, Resource>): void {
   }
 }
 
+function toResource(row: ResourceRow, organisation?: ResourceOrganisationRow): Resource {
+  const verificationStatus = organisation?.verification_status
+  const validStatuses: Resource['orgVerificationStatus'][] = [
+    'draft',
+    'submitted',
+    'under_review',
+    'additional_info_required',
+    'approved',
+    'rejected',
+    'suspended',
+  ]
+  const orgVerificationStatus =
+    validStatuses.find((status) => status === verificationStatus) ?? 'submitted'
+
+  return {
+    id: row.id,
+    organisationId: row.organisation_id,
+    organisationName: organisation?.name || 'Organisation',
+    organisationSlug: organisation?.slug || undefined,
+    organisationType: organisation?.type || undefined,
+    isOrgVerified: orgVerificationStatus === 'approved',
+    orgVerificationStatus,
+    title: row.title,
+    slug: row.slug,
+    description: row.description,
+    category: row.category as ResourceCategory,
+    resourceType: row.resource_type as Resource['resourceType'],
+    images: Array.isArray(row.images) ? row.images.filter((image: unknown): image is string => typeof image === 'string') : [],
+    location: parseResourceLocation(row.location),
+    capacity: row.capacity ?? undefined,
+    isAccessible: row.is_accessible,
+    availabilityStatus: row.availability_status as Resource['availabilityStatus'],
+    accessLevel: row.access_level as Resource['accessLevel'],
+    rate: parseResourceRate(row.rate),
+    usageRules: parseStringArray(row.usage_rules, 'usage rules'),
+    requiredCredentials: parseStringArray(row.required_credentials, 'required credentials'),
+    bookingConditions: parseStringArray(row.booking_conditions, 'booking conditions'),
+    specifications: parseSpecifications(row.specifications),
+    operatingHours: parseOperatingHours(row.operating_hours),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+async function hydrateResources(rows: ResourceRow[]): Promise<Resource[]> {
+  if (!rows.length) return []
+  const organisationIds = [...new Set(rows.map((row) => row.organisation_id).filter(Boolean))]
+  const organisations = organisationIds.length
+    ? await supabase
+        .from('organisations')
+        .select('id,name,slug,type,verification_status')
+        .in('id', organisationIds)
+    : { data: [], error: null }
+  if (organisations.error) {
+    console.error('Could not load organisation status for resources.', organisations.error)
+    throw new Error('Resource organisation status could not be verified.')
+  }
+  const organisationRows = (organisations.data || []) as ResourceOrganisationRow[]
+  const byId = new Map(organisationRows.map((org) => [org.id, org]))
+  return rows.map((row) => toResource(row, byId.get(row.organisation_id)))
+}
+
+async function requireResourceManager(organisationId?: string) {
+  if (!isSupabaseConfigured) throw new Error('Resource management requires a configured backend.')
+  const profile = await getCurrentProfile()
+  if (!['manager', 'org_admin', 'platform_admin'].includes(profile.role)) {
+    throw new Error('Only an authorised resource manager can manage resources.')
+  }
+  if (organisationId && profile.organisationId !== organisationId) {
+    throw new Error('You can only manage resources for your own organisation.')
+  }
+  const organisation = await getOrganisationById(profile.organisationId)
+  if (!organisation || organisation.verificationStatus !== 'approved') {
+    throw new Error('Only a verified organisation can publish resources.')
+  }
+  return profile
+}
+
+function validateResourceInput(input: Partial<ResourceCreateInput>): void {
+  if (input.title !== undefined && !input.title.trim()) {
+    throw new Error('Resource title cannot be empty.')
+  }
+  if (input.description !== undefined && !input.description.trim()) {
+    throw new Error('Resource description cannot be empty.')
+  }
+  if (input.capacity !== undefined && (!Number.isInteger(input.capacity) || input.capacity < 1)) {
+    throw new Error('Resource capacity must be a positive whole number.')
+  }
+  if (
+    input.rate &&
+    (!Number.isFinite(input.rate.amount) || input.rate.amount < 0 || !input.rate.currency.trim())
+  ) {
+    throw new Error('Enter a valid resource rate and currency.')
+  }
+}
+
 export async function getResources(
   filters: ResourceFilterParams = {}
 ): Promise<PaginatedResult<Resource>> {
@@ -653,6 +835,8 @@ export async function getResources(
     isAccessible,
     requiresNoSpecialCredentials,
     requiredCredential,
+    availableDate,
+    availableTime,
     city,
     sortBy = 'createdAt',
     sortDirection = 'desc',
@@ -662,8 +846,31 @@ export async function getResources(
 
   if (isSupabaseConfigured) {
     try {
+      if (isOrgVerified !== undefined || (verificationStatus && verificationStatus !== 'all')) {
+        throw new Error('Organisation verification filtering is unavailable until a verified organisation query is configured.')
+      }
+      if (requiresNoSpecialCredentials || requiredCredential) {
+        throw new Error('Credential filtering is unavailable until the backend exposes a credential-aware resource query.')
+      }
+      if (availableDate || availableTime) {
+        throw new Error('Date-specific availability must be checked through the booking availability service.')
+      }
+      if (sortBy === 'rate') {
+        throw new Error('Rate sorting is unavailable until the backend exposes a numeric rate query.')
+      }
+      if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1) {
+        throw new Error('Choose a valid resource page.')
+      }
       let query = supabase.from('resources').select('*', { count: 'exact' })
 
+      if (search?.trim()) {
+        const safeSearch = search.trim().replace(/[^a-zA-Z0-9\s-]/g, '').slice(0, 100)
+        if (safeSearch) {
+          query = query.or(
+            `title.ilike.%${safeSearch}%,description.ilike.%${safeSearch}%,category.ilike.%${safeSearch}%`
+          )
+        }
+      }
       if (category && category !== 'all') {
         query = query.eq('category', category)
       }
@@ -685,42 +892,26 @@ export async function getResources(
       if (isAccessible !== undefined) {
         query = query.eq('is_accessible', isAccessible)
       }
+      if (city?.trim()) {
+        const safeCity = city.trim().replace(/[^a-zA-Z0-9\s-]/g, '').slice(0, 80)
+        if (safeCity) query = query.filter('location->>city', 'ilike', `%${safeCity}%`)
+      }
 
       const from = (page - 1) * limit
       const to = from + limit - 1
+      const sortColumns = {
+        createdAt: 'created_at',
+        title: 'title',
+        availability: 'availability_status',
+      } as const
+      query = query.order(sortColumns[sortBy], { ascending: sortDirection === 'asc' })
       query = query.range(from, to)
 
       const { data, count, error } = await query
       if (error) throw new Error(`Could not load resources: ${error.message}`)
       if (!data) throw new Error('The resource catalogue returned no data.')
 
-      const rows = data as any[]
-      const items: Resource[] = rows.map((row) => ({
-          id: row.id,
-          organisationId: row.organisation_id,
-          organisationName: 'Member Institution',
-          isOrgVerified: true,
-          orgVerificationStatus: 'approved',
-          title: row.title,
-          slug: row.slug,
-          description: row.description,
-          category: row.category as ResourceCategory,
-          resourceType: row.resource_type as Resource['resourceType'],
-          images: Array.isArray(row.images) ? (row.images as string[]) : [],
-          location: row.location as unknown as Resource['location'],
-          capacity: row.capacity ?? undefined,
-          isAccessible: row.is_accessible,
-          availabilityStatus: row.availability_status as Resource['availabilityStatus'],
-          accessLevel: row.access_level as Resource['accessLevel'],
-          rate: row.rate as unknown as Resource['rate'],
-          usageRules: Array.isArray(row.usage_rules) ? (row.usage_rules as string[]) : [],
-          requiredCredentials: Array.isArray(row.required_credentials) ? (row.required_credentials as string[]) : [],
-          bookingConditions: Array.isArray(row.booking_conditions) ? (row.booking_conditions as string[]) : [],
-          specifications: (row.specifications as Record<string, string>) || {},
-          operatingHours: row.operating_hours as unknown as Resource['operatingHours'],
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-      }))
+      const items = await hydrateResources(data as ResourceRow[])
 
       const total = count ?? items.length
       return {
@@ -856,40 +1047,12 @@ export async function getResourceById(id: string): Promise<Resource | null> {
         .from('resources')
         .select('*')
         .eq('id', id)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') {
         throw new Error(`Could not load resource: ${error.message}`)
       }
-      const row = data as any
-      if (row) {
-        return {
-          id: row.id,
-          organisationId: row.organisation_id,
-          organisationName: 'Member Institution',
-          isOrgVerified: true,
-          orgVerificationStatus: 'approved',
-          title: row.title,
-          slug: row.slug,
-          description: row.description,
-          category: row.category as ResourceCategory,
-          resourceType: row.resource_type as Resource['resourceType'],
-          images: Array.isArray(row.images) ? (row.images as string[]) : [],
-          location: row.location as unknown as Resource['location'],
-          capacity: row.capacity ?? undefined,
-          isAccessible: row.is_accessible,
-          availabilityStatus: row.availability_status as Resource['availabilityStatus'],
-          accessLevel: row.access_level as Resource['accessLevel'],
-          rate: row.rate as unknown as Resource['rate'],
-          usageRules: Array.isArray(row.usage_rules) ? (row.usage_rules as string[]) : [],
-          requiredCredentials: Array.isArray(row.required_credentials) ? (row.required_credentials as string[]) : [],
-          bookingConditions: Array.isArray(row.booking_conditions) ? (row.booking_conditions as string[]) : [],
-          specifications: (row.specifications as Record<string, string>) || {},
-          operatingHours: row.operating_hours as unknown as Resource['operatingHours'],
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-        }
-      }
+      if (data) return (await hydrateResources([data as ResourceRow]))[0]
     } catch (error) {
       if (error instanceof Error) throw error
       throw new Error('Could not load resource from the backend.')
@@ -903,12 +1066,58 @@ export async function getResourceById(id: string): Promise<Resource | null> {
 
 export async function getResourceBySlug(slug: string): Promise<Resource | null> {
   requireBackendInProduction('Resource details')
+  if (isSupabaseConfigured) {
+    const { data, error } = await supabase
+      .from('resources')
+      .select('*')
+      .eq('slug', slug)
+      .maybeSingle()
+    if (error) {
+      console.error('Could not load resource by slug.', error)
+      throw new Error('Resource details could not be loaded.')
+    }
+    return data ? (await hydrateResources([data as ResourceRow]))[0] : null
+  }
   const store = getStoredResources()
   return Object.values(store).find((r) => r.slug === slug) || null
 }
 
 export async function createResource(input: ResourceCreateInput): Promise<Resource> {
   requireBackendInProduction('Resource management')
+  if (isSupabaseConfigured) {
+    const profile = await requireResourceManager(input.organisationId)
+    validateResourceInput(input)
+    const slugBase = input.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    const { data, error } = await supabase
+      .from('resources')
+      .insert({
+        organisation_id: profile.organisationId,
+        title: input.title.trim(),
+        slug: `${slugBase}-${crypto.randomUUID().slice(0, 8)}`,
+        description: input.description.trim(),
+        category: input.category,
+        resource_type: input.resourceType,
+        images: input.images || [],
+        location: input.location,
+        capacity: input.capacity ?? null,
+        is_accessible: input.isAccessible ?? false,
+        availability_status: 'available',
+        access_level: input.accessLevel || 'approval_required',
+        rate: input.rate,
+        usage_rules: input.usageRules || [],
+        required_credentials: input.requiredCredentials || [],
+        booking_conditions: input.bookingConditions || [],
+        specifications: input.specifications || {},
+        operating_hours: input.operatingHours || null,
+      })
+      .select('*')
+      .single()
+    if (error) {
+      console.error('Could not create resource.', error)
+      throw new Error('Resource could not be saved. Check your permissions and required fields.')
+    }
+    return (await hydrateResources([data as ResourceRow]))[0]
+  }
   const now = new Date().toISOString()
   const id = `res-${Date.now()}`
   const slug = input.title
@@ -958,6 +1167,44 @@ export async function updateResource(
   input: ResourceUpdateInput
 ): Promise<Resource> {
   requireBackendInProduction('Resource management')
+  if (isSupabaseConfigured) {
+    const profile = await requireResourceManager()
+    validateResourceInput(input)
+    const changes: Record<string, unknown> = {}
+    if (input.title !== undefined) changes.title = input.title.trim()
+    if (input.description !== undefined) changes.description = input.description.trim()
+    if (input.category !== undefined) changes.category = input.category
+    if (input.resourceType !== undefined) changes.resource_type = input.resourceType
+    if (input.images !== undefined) changes.images = input.images
+    if (input.location !== undefined) changes.location = input.location
+    if (input.capacity !== undefined) changes.capacity = input.capacity
+    if (input.isAccessible !== undefined) changes.is_accessible = input.isAccessible
+    if (input.availabilityStatus !== undefined) changes.availability_status = input.availabilityStatus
+    if (input.accessLevel !== undefined) changes.access_level = input.accessLevel
+    if (input.rate !== undefined) changes.rate = input.rate
+    if (input.usageRules !== undefined) changes.usage_rules = input.usageRules
+    if (input.requiredCredentials !== undefined) changes.required_credentials = input.requiredCredentials
+    if (input.bookingConditions !== undefined) changes.booking_conditions = input.bookingConditions
+    if (input.specifications !== undefined) changes.specifications = input.specifications
+    if (input.operatingHours !== undefined) changes.operating_hours = input.operatingHours
+    if (input.title !== undefined) {
+      changes.slug = `${input.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${crypto.randomUUID().slice(0, 8)}`
+    }
+    changes.updated_at = new Date().toISOString()
+    const { data, error } = await supabase
+      .from('resources')
+      .update(changes)
+      .eq('id', id)
+      .eq('organisation_id', profile.organisationId)
+      .select('*')
+      .maybeSingle()
+    if (error) {
+      console.error('Could not update resource.', error)
+      throw new Error('Resource could not be updated.')
+    }
+    if (!data) throw new Error('Resource was not found or you do not have permission to update it.')
+    return (await hydrateResources([data as ResourceRow]))[0]
+  }
   const store = getStoredResources()
   const existing = store[id]
   if (!existing) {
@@ -992,6 +1239,9 @@ export async function updateResource(
 
 export async function deleteResource(id: string): Promise<boolean> {
   requireBackendInProduction('Resource management')
+  if (isSupabaseConfigured) {
+    throw new Error('Resource deletion is unavailable until the backend defines a safe archival operation.')
+  }
   const store = getStoredResources()
   if (!store[id]) return false
   delete store[id]
@@ -1001,6 +1251,31 @@ export async function deleteResource(id: string): Promise<boolean> {
 
 export async function getResourceCategories(): Promise<{ category: ResourceCategory; count: number }[]> {
   requireBackendInProduction('Resource categories')
+  if (isSupabaseConfigured) {
+    const categories: ResourceCategory[] = [
+      'Laboratories',
+      'Computers & High-Compute',
+      'Fabrication & 3D Printing',
+      'Cameras & Imaging',
+      'Testing & Measurement',
+      'Meeting & Event Spaces',
+      'Chemical & Bio Processing',
+    ]
+    const results = await Promise.all(
+      categories.map(async (category) => {
+        const { count, error } = await supabase
+          .from('resources')
+          .select('id', { count: 'exact', head: true })
+          .eq('category', category)
+        if (error) {
+          console.error(`Could not load resource count for category "${category}".`, error)
+          throw new Error('Resource categories could not be loaded.')
+        }
+        return { category, count: count ?? 0 }
+      })
+    )
+    return results
+  }
   const store = getStoredResources()
   const counts: Record<string, number> = {}
 
