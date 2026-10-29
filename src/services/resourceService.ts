@@ -690,10 +690,11 @@ export async function getResources(
       query = query.range(from, to)
 
       const { data, count, error } = await query
+      if (error) throw new Error(`Could not load resources: ${error.message}`)
+      if (!data) throw new Error('The resource catalogue returned no data.')
 
-      if (!error && data) {
-        const rows = data as any[]
-        const items: Resource[] = rows.map((row) => ({
+      const rows = data as any[]
+      const items: Resource[] = rows.map((row) => ({
           id: row.id,
           organisationId: row.organisation_id,
           organisationName: 'Member Institution',
@@ -718,19 +719,19 @@ export async function getResources(
           operatingHours: row.operating_hours as unknown as Resource['operatingHours'],
           createdAt: row.created_at,
           updatedAt: row.updated_at,
-        }))
+      }))
 
-        const total = count ?? items.length
-        return {
-          items,
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit) || 1,
-        }
+      const total = count ?? items.length
+      return {
+        items,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
       }
-    } catch {
-      // Fallback
+    } catch (error) {
+      if (error instanceof Error) throw error
+      throw new Error('Could not load resources from the backend.')
     }
   }
 
@@ -855,8 +856,11 @@ export async function getResourceById(id: string): Promise<Resource | null> {
         .eq('id', id)
         .single()
 
+      if (error && error.code !== 'PGRST116') {
+        throw new Error(`Could not load resource: ${error.message}`)
+      }
       const row = data as any
-      if (!error && row) {
+      if (row) {
         return {
           id: row.id,
           organisationId: row.organisation_id,
@@ -884,9 +888,11 @@ export async function getResourceById(id: string): Promise<Resource | null> {
           updatedAt: row.updated_at,
         }
       }
-    } catch {
-      // fallback
+    } catch (error) {
+      if (error instanceof Error) throw error
+      throw new Error('Could not load resource from the backend.')
     }
+    return null
   }
 
   const store = getStoredResources()

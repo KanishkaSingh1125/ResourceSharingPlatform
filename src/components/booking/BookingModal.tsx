@@ -8,7 +8,6 @@ import {
   MapPin,
   Send,
   Loader2,
-  QrCode,
   XCircle,
 } from 'lucide-react'
 import {
@@ -144,10 +143,8 @@ export function BookingModal({
   const checkingAvailability = currentSlotQuery === null
   const availableSlots = currentSlotQuery?.slots || []
   const selectedSlot = availableSlots.find((slot) => slot.startTime === startTime) || null
-  const bookingConfirmedCode =
+  const bookingConfirmed =
     submittedBooking && ['approved', 'confirmed'].includes(submittedBooking.status)
-      ? submittedBooking.qrPassCode
-      : null
   const submittedStart = submittedBooking
     ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(submittedBooking.startTime))
     : ''
@@ -278,8 +275,8 @@ export function BookingModal({
     >
       {submittedBooking ? (
         <div className="space-y-6 text-center py-4">
-          <div className={`inline-flex items-center justify-center p-3 rounded-2xl ${bookingConfirmedCode ? 'bg-emerald-100 text-emerald-700' : submittedBooking.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-            {bookingConfirmedCode ? (
+          <div className={`inline-flex items-center justify-center p-3 rounded-2xl ${bookingConfirmed ? 'bg-emerald-100 text-emerald-700' : submittedBooking.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+            {bookingConfirmed ? (
               <CheckCircle2 className="h-10 w-10 text-emerald-600" />
             ) : submittedBooking.status === 'rejected' ? (
               <XCircle className="h-10 w-10 text-red-600" />
@@ -290,7 +287,7 @@ export function BookingModal({
 
           <div className="space-y-1">
             <h4 className="text-base font-bold text-neutral-900">
-              {bookingConfirmedCode ? 'Booking confirmed' : submittedBooking.status === 'rejected' ? 'Booking rejected' : 'Request submitted'}
+              {bookingConfirmed ? 'Booking confirmed' : submittedBooking.status === 'rejected' ? 'Booking rejected' : 'Request submitted'}
             </h4>
             <p className="text-sm font-medium text-neutral-700">
               Backend status: {submittedBooking.status.replace(/_/g, ' ')}
@@ -305,19 +302,12 @@ export function BookingModal({
             )}
           </div>
 
-          {bookingConfirmedCode && (
-            <div className="mx-auto max-w-xs p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
-            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-neutral-700">
-              <QrCode className="h-4 w-4 text-brand-600" />
-              <span>Digital Security Check-In Pass</span>
-            </div>
-            <div className="p-3 bg-white border border-neutral-200 rounded-lg font-mono text-sm font-bold text-neutral-900 tracking-wider">
-              {bookingConfirmedCode}
-            </div>
-            <p className="text-[11px] text-neutral-400">
-              Scan or show this token to facility security at {resource.location.building}.
-            </p>
-          </div>
+          {bookingConfirmed && (
+            <Alert variant="warning" title="Secure handover is not available">
+              This deployment does not provide a backend-issued, one-time check-in credential.
+              No QR payload or booking secret is exposed. Contact the resource manager to arrange
+              check-in and check-out.
+            </Alert>
           )}
         </div>
       ) : (

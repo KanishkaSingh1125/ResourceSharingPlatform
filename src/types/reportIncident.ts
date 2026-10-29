@@ -17,8 +17,21 @@ export interface ConditionOrIncidentReport {
   status: ReportStatus
   attachments: string[]
   resolutionNotes?: string
+  category?: string
+  incidentDate?: string
+  conditionReport?: ConditionReportDetails
   createdAt: string
   updatedAt: string
+}
+
+export interface ConditionReportDetails {
+  phase: 'pre_use' | 'post_use'
+  rating: 'excellent' | 'good' | 'fair' | 'poor'
+  notes: string
+  missingAccessories: string
+  visibleDamage: string
+  abnormalConditions: string
+  confirmed: boolean
 }
 
 export interface ReportCreateInput {
@@ -29,5 +42,7 @@ export interface ReportCreateInput {
   title: string
   description: string
   attachments?: string[]
+  category?: string
+  incidentDate?: string
+  conditionReport?: ConditionReportDetails
 }
-

@@ -19,6 +19,7 @@ import {
   BackendStatusBanner,
 } from '@/components/ui'
 import { BookingModal } from '@/components/booking/BookingModal'
+import { AlternativeFinder } from '@/components/booking/AlternativeFinder'
 import { getResources } from '@/services/resourceService'
 import { getAllOrganisations } from '@/services/organisationService'
 import {
@@ -227,6 +228,13 @@ export function DiscoverPage() {
             </span>
           </div>
         }
+      />
+
+      <AlternativeFinder
+        onOpenResource={(resource) => {
+          setBookingResource(resource)
+          setIsBookingOpen(true)
+        }}
       />
 
       {/* ── Search & Filter Control Bar ────────────────────────── */}

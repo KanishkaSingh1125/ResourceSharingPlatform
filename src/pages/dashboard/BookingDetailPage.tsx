@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, Clock3, MapPin, XCircle } from 'lucide-react'
 import { type ReactNode } from 'react'
 import { Alert, Badge, Button, Card, Modal, PageHeader } from '@/components/ui'
+import { BookingReports } from '@/components/booking/BookingReports'
 import { cancelBooking, getBookingById } from '@/services/bookingService'
 import { type Booking, type BookingStatus } from '@/types/booking'
 
@@ -174,13 +175,9 @@ export function BookingDetailPage() {
                   Rescheduling is temporarily unavailable because the backend does not yet support storing or reviewing proposed replacement times.
                 </p>
               </div>
-              {booking.qrPassCode && ['approved', 'confirmed'].includes(booking.status) && (
-                <div className="mt-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
-                  Confirmed check-in pass: <span className="font-mono font-semibold">{booking.qrPassCode}</span>
-                </div>
-              )}
             </Card>
           </div>
+          <BookingReports booking={booking} />
         </>
       ) : !errorText ? (
         <Alert variant="warning" title="Booking not found">No booking record was returned.</Alert>

@@ -27,7 +27,6 @@ export interface Booking {
   purpose: string
   attendeesCount?: number
   specialRequirements?: string
-  qrPassCode?: string
   checkInTime?: string
   checkOutTime?: string
   conditionOnCheckout?: string

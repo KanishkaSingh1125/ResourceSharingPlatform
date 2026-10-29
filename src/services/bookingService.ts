@@ -11,7 +11,9 @@ import { getOrganisationById } from './organisationService'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { type Database } from '@/types/database'
 
-type BookingRow = Database['public']['Tables']['bookings']['Row']
+type BookingRow = Omit<Database['public']['Tables']['bookings']['Row'], 'qr_pass_code'>
+const BOOKING_FIELDS =
+  'id,resource_id,user_id,organisation_id,owner_organisation_id,status,start_time,end_time,purpose,attendees_count,special_requirements,check_in_time,check_out_time,condition_on_checkout,condition_on_return,rejection_reason,approved_by,approved_at,created_at,updated_at'
 
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [
   'pending',
@@ -65,7 +67,6 @@ async function toBooking(row: BookingRow): Promise<Booking> {
     purpose: row.purpose,
     attendeesCount: row.attendees_count ?? undefined,
     specialRequirements: row.special_requirements ?? undefined,
-    qrPassCode: row.qr_pass_code ?? undefined,
     checkInTime: row.check_in_time ?? undefined,
     checkOutTime: row.check_out_time ?? undefined,
     conditionOnCheckout: row.condition_on_checkout ?? undefined,
@@ -253,14 +254,14 @@ export async function createBooking(input: BookingRequestInput): Promise<Booking
       attendees_count: attendeesCount,
       special_requirements: input.specialRequirements,
     })
-    .select()
+    .select(BOOKING_FIELDS)
     .single()
 
   if (error) {
     if (error.code === '23505') {
       const { data: existing, error: existingError } = await supabase
         .from('bookings')
-        .select('*')
+        .select(BOOKING_FIELDS)
         .eq('id', input.idempotencyKey)
         .eq('user_id', user.id)
         .maybeSingle()
@@ -283,7 +284,7 @@ export async function getBookings(filter: {
   status?: BookingStatus
 } = {}): Promise<Booking[]> {
   await requireCurrentUser()
-  let query = supabase.from('bookings').select('*').order('created_at', { ascending: false })
+  let query = supabase.from('bookings').select(BOOKING_FIELDS).order('created_at', { ascending: false })
   if (filter.userId) query = query.eq('user_id', filter.userId)
   if (filter.organisationId) query = query.eq('organisation_id', filter.organisationId)
   if (filter.ownerOrganisationId) query = query.eq('owner_organisation_id', filter.ownerOrganisationId)
@@ -298,7 +299,7 @@ export async function getBookingById(id: string): Promise<Booking | null> {
   await requireCurrentUser()
   const { data, error } = await supabase
     .from('bookings')
-    .select('*')
+    .select(BOOKING_FIELDS)
     .eq('id', id)
     .maybeSingle()
   if (error) throw new Error(`Could not load booking: ${error.message}`)
@@ -327,7 +328,7 @@ export async function decideBooking(input: BookingDecisionInput): Promise<Bookin
     .eq('id', input.bookingId)
     .eq('owner_organisation_id', profile.organisationId)
     .eq('status', 'pending')
-  const { data, error } = await update.select().maybeSingle()
+  const { data, error } = await update.select(BOOKING_FIELDS).maybeSingle()
   if (error) throw new Error(`Could not update booking: ${error.message}`)
   if (!data) throw new Error('This request is no longer pending or you cannot manage it.')
   return toBooking(data as BookingRow)
@@ -341,7 +342,7 @@ export async function cancelBooking(bookingId: string): Promise<Booking> {
     .eq('id', bookingId)
     .eq('user_id', profile.id)
     .in('status', ['pending', 'approved', 'confirmed'])
-    .select()
+    .select(BOOKING_FIELDS)
     .maybeSingle()
   if (error) throw new Error(`Could not cancel booking: ${error.message}`)
   if (!data) throw new Error('This booking cannot be cancelled or is no longer active.')
@@ -373,7 +374,7 @@ export async function markBookingNoShow(bookingId: string): Promise<Booking> {
     .eq('owner_organisation_id', profile.organisationId)
     .in('status', ['approved', 'confirmed'])
     .lt('end_time', now)
-    .select()
+    .select(BOOKING_FIELDS)
     .maybeSingle()
   if (error) throw new Error(`Could not mark booking as no-show: ${error.message}`)
   if (!data) throw new Error('This booking cannot be marked as a no-show.')
@@ -381,53 +382,21 @@ export async function markBookingNoShow(bookingId: string): Promise<Booking> {
 }
 
 export async function updateBookingCheckIn(
-  bookingId: string,
-  conditionNotes?: string
+  _bookingId: string,
+  _conditionNotes?: string
 ): Promise<Booking> {
-  const profile = await requireCurrentUser()
-  const now = new Date().toISOString()
-  const { data, error } = await supabase
-    .from('bookings')
-    .update({
-      status: 'in_progress',
-      check_in_time: now,
-      condition_on_checkout: conditionNotes,
-      updated_at: now,
-    })
-    .eq('id', bookingId)
-    .eq('user_id', profile.id)
-    .in('status', ['approved', 'confirmed'])
-    .lte('start_time', now)
-    .gt('end_time', now)
-    .select()
-    .maybeSingle()
-  if (error) throw new Error(`Could not check in: ${error.message}`)
-  if (!data) throw new Error('This booking cannot be checked in.')
-  return toBooking(data as BookingRow)
+  requireBackend()
+  throw new Error(
+    'Secure check-in is unavailable until the backend can validate and consume a one-time handover credential.'
+  )
 }
 
 export async function updateBookingCheckOut(
-  bookingId: string,
-  conditionNotes?: string
+  _bookingId: string,
+  _conditionNotes?: string
 ): Promise<Booking> {
-  const profile = await requireCurrentUser()
-  if (!['manager', 'org_admin', 'platform_admin'].includes(profile.role)) {
-    throw new Error('Only an authorised organisation manager can check out bookings.')
-  }
-  const { data, error } = await supabase
-    .from('bookings')
-    .update({
-      status: 'completed',
-      check_out_time: new Date().toISOString(),
-      condition_on_return: conditionNotes,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', bookingId)
-    .eq('owner_organisation_id', profile.organisationId)
-    .eq('status', 'in_progress')
-    .select()
-    .maybeSingle()
-  if (error) throw new Error(`Could not check out: ${error.message}`)
-  if (!data) throw new Error('This booking cannot be checked out.')
-  return toBooking(data as BookingRow)
+  requireBackend()
+  throw new Error(
+    'Secure check-out is unavailable until the backend can validate and consume a one-time handover credential.'
+  )
 }
