@@ -1,55 +1,26 @@
-import { PageHeader, Card, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Badge } from '@/components/ui'
+import { Alert, Card, PageHeader } from '@/components/ui'
 
 export function OrgAuditLogsPage() {
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Activity & Audit Logs"
-        subtitle="Immutable timestamped log of booking submissions, access approvals, check-ins, and permission changes."
-        badge={<Badge variant="primary">Real-time Stream</Badge>}
+        title="Activity & audit history"
+        subtitle="Historical events are shown only when they are available from the authorised audit service."
         breadcrumbs={[
-          { label: 'Workspace', to: '/org' },
-          { label: 'Audit Logs' },
+          { label: 'Organisation', to: '/org' },
+          { label: 'Audit history' },
         ]}
       />
-
-      <Card padding="none">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Timestamp (IST)</TableHead>
-              <TableHead>Actor</TableHead>
-              <TableHead>Event</TableHead>
-              <TableHead>Resource</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow>
-              <TableCell className="font-mono text-xs text-neutral-500">
-                2026-10-28 11:42
-              </TableCell>
-              <TableCell className="font-medium text-xs">Prof. Alan Turing</TableCell>
-              <TableCell className="text-xs">Approved Booking #BK-4091</TableCell>
-              <TableCell className="text-xs text-neutral-600">JEOL 200kV Cryo-TEM</TableCell>
-              <TableCell>
-                <Badge variant="success" size="sm">Success</Badge>
-              </TableCell>
-            </TableRow>
-
-            <TableRow>
-              <TableCell className="font-mono text-xs text-neutral-500">
-                2026-10-28 09:15
-              </TableCell>
-              <TableCell className="font-medium text-xs">Marcus Vance</TableCell>
-              <TableCell className="text-xs">Updated Slot Availability</TableCell>
-              <TableCell className="text-xs text-neutral-600">Class 100 Cleanroom</TableCell>
-              <TableCell>
-                <Badge variant="info" size="sm">Config</Badge>
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
+      <Alert variant="warning" title="Audit history is not connected">
+        This deployment does not define an audit-event table or backend audit API. No sample
+        events are displayed; historical activity cannot be reviewed until the backend exposes
+        persisted records with organisation-scoped access controls.
+      </Alert>
+      <Card>
+        <p className="text-sm text-neutral-600">
+          Audit records are immutable and cannot be changed through this interface. Filters and
+          pagination will be available when an authorised audit source is configured.
+        </p>
       </Card>
     </div>
   )

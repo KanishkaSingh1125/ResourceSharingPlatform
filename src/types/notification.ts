@@ -1,8 +1,15 @@
 export type NotificationType =
   | 'booking_request'
   | 'booking_status'
+  | 'waiting_list'
   | 'verification'
+  | 'resource'
+  | 'maintenance'
+  | 'condition_report'
   | 'incident'
+  | 'credential_expiry'
+  | 'sharing_consent'
+  | 'safety_hold'
   | 'system'
 
 export interface AppNotification {
@@ -15,4 +22,3 @@ export interface AppNotification {
   link?: string
   createdAt: string
 }
-

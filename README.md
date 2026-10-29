@@ -11,6 +11,7 @@ npm install
 npm run dev
 npm run build
 npm run lint
+npm test
 ```
 
 Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in a local `.env` file to connect to Supabase. Booking actions require an authenticated Supabase session and the database tables and row-level security policies configured for the account. The repository currently does not include database migrations or a sign-in UI.
@@ -44,3 +45,41 @@ Booking reads deliberately omit `qr_pass_code`; the client does not display or e
 Condition and incident reports use the existing `reports_and_incidents` table and are read or written only through an authenticated Supabase session. Report visibility, inserts, and manager review must be restricted by deployed row-level security policies. Condition details and incident category/date are serialized into the existing description column because the current table has no dedicated fields. Image evidence upload is disabled until a private Storage bucket and participant/manager policies are configured; public image URLs are not stored.
 
 The alternative finder currently provides a deterministic fallback over the verified organisation and resource catalogue, not AI recommendations. It displays no utilisation claims when a usage feed is unavailable, and only reports time-window availability after a backend availability check. Recommendations do not authorize a booking or bypass the normal eligibility and approval workflow.
+
+## Notifications and organisation dashboard
+
+The notification centre and header badge read the authenticated user's persisted rows from the
+`notifications` table. Read-state updates are scoped to that user, and notification links are
+shown only for internal application paths. The table's row-level security policies must enforce
+the same user scope. The frontend does not generate sample notifications. Notification-category
+preferences are not supported because this schema has no preference table or API.
+
+The organisation workspace reads resources, bookings, and unresolved incident reports from
+Supabase and requires a manager, organisation administrator, or platform administrator profile.
+Impact metrics and audit-history pages intentionally show an unavailable state: this repository
+does not define organisation analytics aggregation or persisted audit-event APIs. Do not treat
+these pages as reporting or compliance evidence.
+
+## Trust and access limitations
+
+The current database schema has no user-credential, credential-sharing-consent, or consent-history
+contract. In Supabase-backed mode, profiles therefore expose no seeded credentials; a trust
+passport, cross-organisation credential sharing, consent revocation, and renewal tracking cannot
+be safely enabled until those records and server-enforced policies exist. No universal trust score
+is used.
+
+The application has no sign-in page implementation or route-level authentication guard. The
+development role selector is not authorization. Supabase RLS and server-side role checks must
+remain authoritative for every protected read and write. The repository has no database
+migrations or deployment configuration; do not deploy it as a production service until those
+backend policies, auth flows, secrets, and hosting settings have been reviewed and configured.
+The current frontend test suite covers notification list rendering, filters, read updates, and
+backend error handling. It does not replace authenticated end-to-end testing against a configured
+backend.
+
+The other remote feature branches currently have no commits beyond the common ancestor of this
+checkout, so there were no branch-specific changes to merge during this pass. `origin/main` has a
+separate scaffold commit from that ancestor; its tree removes current booking, resource, and
+organisation implementations, so it was not merged to avoid discarding working functionality.
+Production deployment was not attempted because no hosting target or production credentials are
+configured.

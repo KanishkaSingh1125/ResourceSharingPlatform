@@ -74,36 +74,32 @@ function saveStoredProfile(profile: Profile): void {
 
 export async function getCurrentProfile(): Promise<Profile> {
   if (isSupabaseConfigured) {
-    try {
-      const { data: authUser } = await supabase.auth.getUser()
-      if (authUser?.user) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', authUser.user.id)
-          .single()
+    const { data: authUser, error: authError } = await supabase.auth.getUser()
+    if (authError) throw new Error(`Could not verify your session: ${authError.message}`)
+    if (!authUser.user) throw new Error('Sign in before accessing your profile.')
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authUser.user.id)
+      .maybeSingle()
+    if (error) throw new Error(`Could not load your profile: ${error.message}`)
+    if (!data) throw new Error('Your authenticated account does not have a ShareSphere profile.')
 
-        const profileRow = data as any
-        if (!error && profileRow) {
-          return {
-            id: profileRow.id,
-            email: profileRow.email,
-            fullName: profileRow.full_name,
-            avatarUrl: profileRow.avatar_url ?? undefined,
-            phone: profileRow.phone ?? undefined,
-            title: profileRow.title ?? undefined,
-            department: profileRow.department ?? undefined,
-            organisationId: profileRow.organisation_id,
-            organisationName: 'Connected Institution',
-            role: (profileRow.role as UserRole) || 'member',
-            credentials: SEED_CREDENTIALS,
-            createdAt: profileRow.created_at,
-            updatedAt: profileRow.updated_at,
-          }
-        }
-      }
-    } catch {
-      // Fall through to local profile
+    const profileRow = data as any
+    return {
+      id: profileRow.id,
+      email: profileRow.email,
+      fullName: profileRow.full_name,
+      avatarUrl: profileRow.avatar_url ?? undefined,
+      phone: profileRow.phone ?? undefined,
+      title: profileRow.title ?? undefined,
+      department: profileRow.department ?? undefined,
+      organisationId: profileRow.organisation_id,
+      organisationName: 'Connected Institution',
+      role: (profileRow.role as UserRole) || 'member',
+      credentials: [],
+      createdAt: profileRow.created_at,
+      updatedAt: profileRow.updated_at,
     }
   }
 
@@ -112,33 +108,29 @@ export async function getCurrentProfile(): Promise<Profile> {
 
 export async function getProfileById(userId: string): Promise<Profile | null> {
   if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle()
+    if (error) throw new Error(`Could not load the profile: ${error.message}`)
+    if (!data) return null
 
-      const profileRow = data as any
-      if (!error && profileRow) {
-        return {
-          id: profileRow.id,
-          email: profileRow.email,
-          fullName: profileRow.full_name,
-          avatarUrl: profileRow.avatar_url ?? undefined,
-          phone: profileRow.phone ?? undefined,
-          title: profileRow.title ?? undefined,
-          department: profileRow.department ?? undefined,
-          organisationId: profileRow.organisation_id,
-          organisationName: 'Member Institution',
-          role: (profileRow.role as UserRole) || 'member',
-          credentials: SEED_CREDENTIALS,
-          createdAt: profileRow.created_at,
-          updatedAt: profileRow.updated_at,
-        }
-      }
-    } catch {
-      // fallback
+    const profileRow = data as any
+    return {
+      id: profileRow.id,
+      email: profileRow.email,
+      fullName: profileRow.full_name,
+      avatarUrl: profileRow.avatar_url ?? undefined,
+      phone: profileRow.phone ?? undefined,
+      title: profileRow.title ?? undefined,
+      department: profileRow.department ?? undefined,
+      organisationId: profileRow.organisation_id,
+      organisationName: 'Member Institution',
+      role: (profileRow.role as UserRole) || 'member',
+      credentials: [],
+      createdAt: profileRow.created_at,
+      updatedAt: profileRow.updated_at,
     }
   }
 
@@ -149,47 +141,37 @@ export async function getProfileById(userId: string): Promise<Profile | null> {
 
 export async function updateProfile(userId: string, input: ProfileUpdateInput): Promise<Profile> {
   if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: input.fullName,
-          phone: input.phone,
-          title: input.title,
-          department: input.department,
-          avatar_url: input.avatarUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId)
-        .select()
-        .single()
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: input.fullName,
+        phone: input.phone,
+        title: input.title,
+        department: input.department,
+        avatar_url: input.avatarUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId)
+      .select()
+      .single()
+    if (error) throw new Error(`Could not save your profile: ${error.message}`)
+    if (!data) throw new Error('Your profile was not updated.')
 
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      const profileRow = data as any
-      if (profileRow) {
-        const updated: Profile = {
-          id: profileRow.id,
-          email: profileRow.email,
-          fullName: profileRow.full_name,
-          avatarUrl: profileRow.avatar_url ?? undefined,
-          phone: profileRow.phone ?? undefined,
-          title: profileRow.title ?? undefined,
-          department: profileRow.department ?? undefined,
-          organisationId: profileRow.organisation_id,
-          organisationName: 'Connected Institution',
-          role: (profileRow.role as UserRole) || 'member',
-          credentials: SEED_CREDENTIALS,
-          createdAt: profileRow.created_at,
-          updatedAt: profileRow.updated_at,
-        }
-        saveStoredProfile(updated)
-        return updated
-      }
-    } catch (err) {
-      console.warn('Supabase updateProfile failed, updating local store:', err)
+    const profileRow = data as any
+    return {
+      id: profileRow.id,
+      email: profileRow.email,
+      fullName: profileRow.full_name,
+      avatarUrl: profileRow.avatar_url ?? undefined,
+      phone: profileRow.phone ?? undefined,
+      title: profileRow.title ?? undefined,
+      department: profileRow.department ?? undefined,
+      organisationId: profileRow.organisation_id,
+      organisationName: 'Connected Institution',
+      role: (profileRow.role as UserRole) || 'member',
+      credentials: [],
+      createdAt: profileRow.created_at,
+      updatedAt: profileRow.updated_at,
     }
   }
 
@@ -210,5 +192,5 @@ export async function updateProfile(userId: string, input: ProfileUpdateInput): 
 
 export async function getUserCredentials(userId: string): Promise<UserCredential[]> {
   const profile = await getProfileById(userId)
-  return profile?.credentials ?? SEED_CREDENTIALS
+  return profile?.credentials ?? []
 }

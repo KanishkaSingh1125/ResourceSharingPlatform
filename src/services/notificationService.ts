@@ -1,97 +1,103 @@
-import { type AppNotification } from '@/types/notification'
-import { getCurrentProfile } from './authService'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { type AppNotification, type NotificationType } from '@/types/notification'
+import { type Database } from '@/types/database'
 
-const STORAGE_KEY_NOTIFICATIONS = 'sharesphere_notifications_v1'
+type NotificationRow = Database['public']['Tables']['notifications']['Row']
 
-const SEED_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: 'notif-1',
-    userId: 'usr-turing-01',
-    type: 'booking_status',
-    title: 'Booking Approved',
-    message: 'Your reservation for Cryo-TEM 300kV on Nov 2 has been approved by MIT Nano Core.',
-    read: false,
-    link: '/dashboard/bookings',
-    createdAt: '2026-10-25T14:00:00Z',
-  },
-  {
-    id: 'notif-2',
-    userId: 'usr-turing-01',
-    type: 'verification',
-    title: 'Accreditation Validated',
-    message: 'Institutional MOU and safety certification clearance verified through Oct 2027.',
-    read: true,
-    link: '/org/verification',
-    createdAt: '2026-10-20T09:30:00Z',
-  },
-  {
-    id: 'notif-3',
-    userId: 'usr-turing-01',
-    type: 'booking_request',
-    title: 'New Reservation Request',
-    message: 'Harvard Innovation Makerspace requested 4 hours on the Lithography Bay.',
-    read: false,
-    link: '/org/bookings',
-    createdAt: '2026-10-27T16:45:00Z',
-  },
-]
+export interface NotificationPage {
+  notifications: AppNotification[]
+  total: number
+  unreadCount: number
+}
 
-function getStoredNotifications(): AppNotification[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_NOTIFICATIONS)
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY_NOTIFICATIONS, JSON.stringify(SEED_NOTIFICATIONS))
-      return SEED_NOTIFICATIONS
-    }
-    return JSON.parse(raw)
-  } catch (err) {
-    console.error('Failed to load notifications from storage', err)
-    return SEED_NOTIFICATIONS
+export interface NotificationQuery {
+  page?: number
+  pageSize?: number
+  read?: boolean
+  type?: NotificationType
+}
+
+async function requireCurrentUserId(): Promise<string> {
+  if (!isSupabaseConfigured) {
+    throw new Error('Notifications require a configured backend.')
+  }
+  const { data, error } = await supabase.auth.getUser()
+  if (error) throw new Error(`Could not verify your session: ${error.message}`)
+  if (!data.user) throw new Error('Sign in before accessing notifications.')
+  return data.user.id
+}
+
+function toNotification(row: NotificationRow): AppNotification {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    type: row.type as NotificationType,
+    title: row.title,
+    message: row.message,
+    read: row.read,
+    link: row.link ?? undefined,
+    createdAt: row.created_at,
   }
 }
 
-function saveStoredNotifications(list: AppNotification[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_NOTIFICATIONS, JSON.stringify(list))
-  } catch (err) {
-    console.error('Failed to save notifications to storage', err)
+export async function getUserNotifications(
+  options: NotificationQuery = {}
+): Promise<NotificationPage> {
+  const userId = await requireCurrentUserId()
+  const page = options.page ?? 1
+  const pageSize = options.pageSize ?? 20
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1) {
+    throw new Error('Choose a valid notification page.')
+  }
+
+  let query = supabase
+    .from('notifications')
+    .select('*', { count: 'exact' })
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  if (options.read !== undefined) query = query.eq('read', options.read)
+  if (options.type) query = query.eq('type', options.type)
+
+  const start = (page - 1) * pageSize
+  const [pageResult, unreadResult] = await Promise.all([
+    query.range(start, start + pageSize - 1),
+    supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('read', false),
+  ])
+  if (pageResult.error) throw new Error(`Could not load notifications: ${pageResult.error.message}`)
+  if (unreadResult.error) {
+    throw new Error(`Could not load the unread notification count: ${unreadResult.error.message}`)
+  }
+
+  return {
+    notifications: ((pageResult.data || []) as NotificationRow[]).map(toNotification),
+    total: pageResult.count ?? 0,
+    unreadCount: unreadResult.count ?? 0,
   }
 }
 
-export async function getUserNotifications(userId?: string): Promise<AppNotification[]> {
-  const profile = await getCurrentProfile()
-  const targetId = userId || profile.id
-  const list = getStoredNotifications()
-  return list.filter((n) => n.userId === targetId)
+export async function markNotificationAsRead(id: string): Promise<void> {
+  const userId = await requireCurrentUserId()
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select('id')
+    .maybeSingle()
+  if (error) throw new Error(`Could not mark the notification as read: ${error.message}`)
+  if (!data) throw new Error('The notification is unavailable or you do not have permission to change it.')
 }
 
-export async function markNotificationAsRead(id: string): Promise<boolean> {
-  const list = getStoredNotifications()
-  const updated = list.map((n) => (n.id === id ? { ...n, read: true } : n))
-  saveStoredNotifications(updated)
-  return true
+export async function markAllNotificationsAsRead(): Promise<void> {
+  const userId = await requireCurrentUserId()
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('user_id', userId)
+    .eq('read', false)
+  if (error) throw new Error(`Could not mark notifications as read: ${error.message}`)
 }
-
-export async function markAllNotificationsAsRead(userId?: string): Promise<boolean> {
-  const profile = await getCurrentProfile()
-  const targetId = userId || profile.id
-  const list = getStoredNotifications()
-  const updated = list.map((n) => (n.userId === targetId ? { ...n, read: true } : n))
-  saveStoredNotifications(updated)
-  return true
-}
-
-export async function createNotification(
-  input: Omit<AppNotification, 'id' | 'createdAt' | 'read'>
-): Promise<AppNotification> {
-  const list = getStoredNotifications()
-  const newNotif: AppNotification = {
-    ...input,
-    id: `notif-${Date.now()}`,
-    read: false,
-    createdAt: new Date().toISOString(),
-  }
-  saveStoredNotifications([newNotif, ...list])
-  return newNotif
-}
-
