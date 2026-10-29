@@ -4,4 +4,7 @@ export { OrgBookingsPage } from './OrgBookingsPage'
 export { OrgMembersPage } from './OrgMembersPage'
 export { OrgAnalyticsPage } from './OrgAnalyticsPage'
 export { OrgSettingsPage } from './OrgSettingsPage'
-
+export { ConditionReportsPage } from './ConditionReportsPage'
+export { OrgIncidentsPage } from './OrgIncidentsPage'
+export { OrgVerificationPage } from './OrgVerificationPage'
+export { OrgAuditLogsPage } from './OrgAuditLogsPage'

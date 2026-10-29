@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /**
  * types/index.ts
  * Shared TypeScript types for ShareSphere.
@@ -76,3 +77,16 @@ export interface AsyncState<T> {
   loading: boolean
   error: string | null
 }
+=======
+export * from './serviceCommon'
+export * from './database'
+export * from './organisation'
+export * from './navigation'
+export * from './profile'
+export * from './resource'
+export * from './booking'
+export * from './eligibility'
+export * from './notification'
+export * from './reportIncident'
+export * from './waitingList'
+>>>>>>> origin/feature/ui-design
