@@ -69,7 +69,9 @@ export async function checkEligibility(
   }
 
   // 3. Check organisation verification
-  const orgVerification = (resource.organisations as Record<string, unknown>)?.verification_status
+  const orgVerification = Array.isArray(resource.organisations)
+    ? (resource.organisations[0] as any).verification_status
+    : (resource.organisations as any)?.verification_status
   if (orgVerification !== 'approved') {
     reasons.push({
       rule_type: 'org_verification',
