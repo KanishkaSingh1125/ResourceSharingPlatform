@@ -19,6 +19,14 @@ import type {
   EligibilityRule,
   FairSharePolicy,
   FairShareScore,
+  CredentialVerificationHistory,
+  CredentialVerificationSource,
+  CredentialShareAttribute,
+  CredentialShareConsent,
+  RecipientCredentialShareConsent,
+  CredentialShareConsentHistory,
+  ConsentedCredential,
+  RpcResult,
   UserCredential,
 } from '@/types'
 
@@ -298,6 +306,101 @@ export async function addCredential(input: {
     .single()
 
   return { data: data as UserCredential | null, error: error?.message ?? null }
+}
+
+export async function reviewCredential(input: {
+  credential_id: string
+  verified: boolean
+  verification_source?: CredentialVerificationSource
+  reason: string
+}) {
+  if (input.verified && !input.verification_source) {
+    return { success: false, error: 'Choose a verification source before verifying this credential.' } as RpcResult
+  }
+  const { data, error } = await supabase.rpc('review_user_credential', {
+    _credential_id: input.credential_id,
+    _verified: input.verified,
+    _verification_source: input.verified ? input.verification_source ?? null : null,
+    _reason: input.reason,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
+export async function getCredentialVerificationHistory(credentialId: string) {
+  const { data, error } = await supabase
+    .from('credential_verification_history')
+    .select('*')
+    .eq('credential_id', credentialId)
+    .order('changed_at', { ascending: false })
+  return { data: (data ?? []) as CredentialVerificationHistory[], error: error?.message ?? null }
+}
+
+export async function getMyCredentialShareConsents() {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: [], error: 'Not authenticated' }
+  const { data, error } = await supabase
+    .from('credential_share_consents')
+    .select('*')
+    .eq('subject_user_id', user.id)
+    .order('granted_at', { ascending: false })
+  return { data: (data ?? []) as CredentialShareConsent[], error: error?.message ?? null }
+}
+
+export async function getCredentialShareConsentsForOrganisation(orgId: string) {
+  const { data, error } = await supabase
+    .from('credential_share_consents')
+    .select('id, recipient_org_id, purpose, allowed_attributes, granted_at, expires_at, revoked_at')
+    .eq('recipient_org_id', orgId)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('granted_at', { ascending: false })
+  return {
+    data: (data ?? []) as RecipientCredentialShareConsent[],
+    error: error?.message ?? null,
+  }
+}
+
+export async function getCredentialShareConsentHistory(consentId: string) {
+  const { data, error } = await supabase
+    .from('credential_share_consent_history')
+    .select('*')
+    .eq('consent_id', consentId)
+    .order('occurred_at', { ascending: false })
+  return { data: (data ?? []) as CredentialShareConsentHistory[], error: error?.message ?? null }
+}
+
+export async function grantCredentialShareConsent(input: {
+  recipient_org_id: string
+  purpose: string
+  allowed_attributes: CredentialShareAttribute[]
+  expires_at: string
+}) {
+  const { data, error } = await supabase.rpc('grant_credential_share_consent', {
+    _recipient_org_id: input.recipient_org_id,
+    _purpose: input.purpose,
+    _allowed_attributes: input.allowed_attributes,
+    _expires_at: input.expires_at,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
+export async function revokeCredentialShareConsent(consentId: string, reason: string) {
+  const { data, error } = await supabase.rpc('revoke_credential_share_consent', {
+    _consent_id: consentId,
+    _reason: reason,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
+export async function getConsentedCredentials(consentId: string, purpose: string) {
+  const { data, error } = await supabase.rpc('get_consented_credentials', {
+    _consent_id: consentId,
+    _purpose: purpose,
+  })
+  return { data: (data ?? []) as ConsentedCredential[], error: error?.message ?? null }
 }
 
 // ── FairShare Scoring ────────────────────────────────────────────────────────

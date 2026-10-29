@@ -5,6 +5,13 @@
 export {
   reportIncident,
   updateIncidentStatus,
+  assignIncident,
+  addIncidentEvidence,
+  uploadIncidentEvidence,
+  placeSafetyHold,
+  releaseSafetyHold,
+  getSafetyHolds,
+  getIncidentHistory,
   getResourceIncidents,
   getIncident,
 } from './incidentService'

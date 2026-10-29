@@ -10,7 +10,7 @@
  */
 
 import { supabase } from '@/lib/supabase'
-import { checkEligibility, computeFairShareScore } from '@/features/eligibility/eligibilityService'
+import { checkEligibility } from '@/features/eligibility/eligibilityService'
 import type {
   Booking,
   CreateBookingInput,
@@ -22,6 +22,8 @@ import type {
   ConditionReport,
   PaginatedResponse,
   RpcResult,
+  ConditionChecklistItem,
+  ConditionReportInput,
 } from '@/types'
 
 // ── Booking Creation (via RPC) ───────────────────────────────────────────────
@@ -48,18 +50,6 @@ export async function createBooking(input: CreateBookingInput) {
     } as RpcResult
   }
 
-  // Step 2: Compute FairShare score
-  const { data: orgData } = await supabase
-    .from('org_members')
-    .select('org_id')
-    .eq('user_id', user.id)
-    .single()
-  const orgId = orgData?.org_id as string | undefined
-  const fairshare = orgId
-    ? await computeFairShareScore(user.id, orgId, input.resource_id, input.starts_at)
-    : null
-
-  // Step 3: Create booking via RPC (initially without score)
   const { data, error } = await supabase.rpc('create_booking', {
     _resource_id: input.resource_id,
     _starts_at: input.starts_at,
@@ -70,20 +60,7 @@ export async function createBooking(input: CreateBookingInput) {
   })
 
   if (error) return { success: false, error: error.message } as RpcResult
-  const result = data as RpcResult
-
-  // Step 4: If scoring succeeded, patch the booking record
-  if (fairshare && result.success && result.booking_id) {
-    await supabase
-      .from('bookings')
-      .update({
-        fairshare_score: fairshare.total_score,
-        policy_version: fairshare.policy_version,
-      })
-      .eq('id', result.booking_id)
-  }
-
-  return result
+  return data as RpcResult
 }
 
 // ── Booking Status Transition (via RPC) ──────────────────────────────────────
@@ -137,6 +114,16 @@ export function requestReschedule(bookingId: string, reason: string) {
   })
 }
 
+export async function rescheduleBooking(bookingId: string, startsAt: string, endsAt: string) {
+  const { data, error } = await supabase.rpc('reschedule_booking', {
+    _booking_id: bookingId,
+    _starts_at: startsAt,
+    _ends_at: endsAt,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
 export function completeBooking(bookingId: string) {
   return transitionBookingStatus({
     booking_id: bookingId,
@@ -158,7 +145,7 @@ export function markNoShow(bookingId: string) {
 export async function getBooking(id: string) {
   const { data, error } = await supabase
     .from('bookings')
-    .select('*, resources(name, location, resource_type, org_id), profiles(display_name, email)')
+    .select('*, resources(name, location, resource_type, org_id), profiles!user_id(display_name, email)')
     .eq('id', id)
     .single()
 
@@ -169,9 +156,9 @@ export async function getMyBookings(opts: {
   status?: BookingStatus
   page?: number
   pageSize?: number
-} = {}): Promise<PaginatedResponse<Booking>> {
+} = {}): Promise<PaginatedResponse<Booking> & { error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { data: [], count: 0, page: 1, pageSize: 20, hasMore: false }
+  if (!user) return { data: [], count: 0, page: 1, pageSize: 20, hasMore: false, error: 'Not authenticated' }
 
   const page = opts.page ?? 1
   const pageSize = opts.pageSize ?? 20
@@ -187,7 +174,7 @@ export async function getMyBookings(opts: {
 
   if (opts.status) query = query.eq('status', opts.status)
 
-  const { data, count } = await query
+  const { data, count, error } = await query
 
   return {
     data: (data ?? []) as Booking[],
@@ -195,6 +182,7 @@ export async function getMyBookings(opts: {
     page,
     pageSize,
     hasMore: (count ?? 0) > page * pageSize,
+    error: error?.message ?? null,
   }
 }
 
@@ -208,7 +196,7 @@ export async function getResourceBookings(resourceId: string, opts: {
 } = {}) {
   let query = supabase
     .from('bookings')
-    .select('*, profiles(display_name, email)')
+    .select('*, profiles!user_id(display_name, email)')
     .eq('resource_id', resourceId)
     .order('starts_at')
 
@@ -227,7 +215,7 @@ export async function getResourceBookings(resourceId: string, opts: {
 export async function getOrgPendingBookings(orgId: string) {
   const { data, error } = await supabase
     .from('bookings')
-    .select('*, resources(name, location, resource_type, org_id), profiles(display_name, email)')
+    .select('*, resources(name, location, resource_type, org_id), profiles!user_id(display_name, email)')
     .eq('org_id', orgId)
     .eq('status', 'pending_approval')
     .order('created_at')
@@ -251,29 +239,60 @@ export async function getBookingHistory(bookingId: string) {
 
 export async function joinWaitingList(entry: {
   resource_id: string
-  org_id: string
   starts_at: string
   ends_at: string
 }) {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { data: null, error: 'Not authenticated' }
-
-  const { data, error } = await supabase
+  const { data: result, error } = await supabase.rpc('join_waiting_list', {
+    _resource_id: entry.resource_id,
+    _starts_at: entry.starts_at,
+    _ends_at: entry.ends_at,
+  })
+  if (error) return { data: null, error: error.message }
+  const response = result as RpcResult
+  if (!response.success || typeof response.entry_id !== 'string') {
+    return { data: null, error: response.error ?? 'Could not join waitlist' }
+  }
+  const { data, error: readError } = await supabase
     .from('waiting_list')
-    .insert({ ...entry, user_id: user.id })
-    .select()
+    .select('*')
+    .eq('id', response.entry_id)
     .single()
-
-  return { data: data as WaitingListEntry | null, error: error?.message ?? null }
+  return { data: data as WaitingListEntry | null, error: readError?.message ?? null }
 }
 
 export async function leaveWaitingList(entryId: string) {
-  const { error } = await supabase
-    .from('waiting_list')
-    .delete()
-    .eq('id', entryId)
+  const { data, error } = await supabase.rpc('leave_waiting_list', { _entry_id: entryId })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
 
-  return { error: error?.message ?? null }
+export async function claimWaitlistOffer(entryId: string) {
+  const { data, error } = await supabase.rpc('claim_waitlist_offer', { _entry_id: entryId })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
+export async function allocateWaitlistSlot(input: {
+  resource_id: string
+  starts_at: string
+  ends_at: string
+}) {
+  const { data, error } = await supabase.rpc('allocate_waitlist_slot', {
+    _resource_id: input.resource_id,
+    _starts_at: input.starts_at,
+    _ends_at: input.ends_at,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
+export async function prioritizeWaitlistEntry(entryId: string, reason: string) {
+  const { data, error } = await supabase.rpc('prioritize_waitlist_entry', {
+    _entry_id: entryId,
+    _reason: reason,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
 }
 
 export async function getMyWaitingList() {
@@ -291,17 +310,42 @@ export async function getMyWaitingList() {
 
 // ── Check-in / Check-out ─────────────────────────────────────────────────────
 
-export async function recordCheckin(bookingId: string, eventType: 'check_in' | 'check_out', notes = '') {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { data: null, error: 'Not authenticated' }
+export async function issueBookingQrToken(bookingId: string, eventType: 'check_in' | 'check_out') {
+  const { data, error } = await supabase.rpc('issue_booking_qr_token', {
+    _booking_id: bookingId,
+    _event_type: eventType,
+  })
+  if (error) return { token: null, expires_at: null, error: error.message }
+  const result = data as RpcResult
+  if (!result.success || typeof result.token !== 'string') {
+    return { token: null, expires_at: null, error: result.error ?? 'Could not issue QR token' }
+  }
+  return {
+    token: result.token,
+    expires_at: typeof result.expires_at === 'string' ? result.expires_at : null,
+    error: null,
+  }
+}
 
-  const { data, error } = await supabase
-    .from('checkin_events')
-    .insert({ booking_id: bookingId, event_type: eventType, recorded_by: user.id, notes })
-    .select()
-    .single()
+export async function consumeBookingQrToken(
+  token: string,
+  resourceId: string,
+  eventType: 'check_in' | 'check_out',
+  notes = ''
+) {
+  const { data, error } = await supabase.rpc('consume_booking_qr_token', {
+    _token: token,
+    _resource_id: resourceId,
+    _event_type: eventType,
+    _notes: notes,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
 
-  return { data: data as CheckinEvent | null, error: error?.message ?? null }
+/** @deprecated QR tokens are required; call consumeBookingQrToken with the scanned token. */
+export async function recordCheckin(_bookingId: string, _eventType: 'check_in' | 'check_out', _notes = '') {
+  return { data: null, error: 'QR token required; use consumeBookingQrToken with the scanned token.' }
 }
 
 export async function getCheckinEvents(bookingId: string) {
@@ -316,24 +360,76 @@ export async function getCheckinEvents(bookingId: string) {
 
 // ── Condition Reports ────────────────────────────────────────────────────────
 
-export async function submitConditionReport(report: {
-  booking_id: string
-  resource_id: string
-  report_type: 'pre_use' | 'post_use'
-  condition: 'excellent' | 'good' | 'fair' | 'poor' | 'damaged'
-  description?: string
-  image_urls?: string[]
-}) {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { data: null, error: 'Not authenticated' }
-
+export async function getConditionChecklist(resourceId: string) {
   const { data, error } = await supabase
-    .from('condition_reports')
-    .insert({ ...report, reported_by: user.id })
+    .from('condition_checklist_items')
+    .select('*')
+    .eq('resource_id', resourceId)
+    .eq('is_active', true)
+    .order('sort_order')
+  return { data: (data ?? []) as ConditionChecklistItem[], error: error?.message ?? null }
+}
+
+export async function saveConditionChecklistItem(input: Omit<ConditionChecklistItem, 'id' | 'created_at'>) {
+  const { data, error } = await supabase
+    .from('condition_checklist_items')
+    .upsert(input, { onConflict: 'resource_id,item_key' })
     .select()
     .single()
+  return { data: data as ConditionChecklistItem | null, error: error?.message ?? null }
+}
 
-  return { data: data as ConditionReport | null, error: error?.message ?? null }
+export async function submitConditionReport(report: ConditionReportInput) {
+  const { data: result, error } = await supabase.rpc('submit_condition_report', {
+    _booking_id: report.booking_id,
+    _resource_id: report.resource_id,
+    _report_type: report.report_type,
+    _condition: report.condition,
+    _description: report.description ?? '',
+    _checklist: report.checklist ?? {},
+    _damage_flag: report.damage_flag ?? false,
+  })
+  if (error) return { data: null, error: error.message, incident_id: null as string | null }
+  const response = result as RpcResult
+  if (!response.success || typeof response.report_id !== 'string') {
+    return { data: null, error: response.error ?? 'Condition report failed', incident_id: null as string | null }
+  }
+  const { data, error: readError } = await supabase
+    .from('condition_reports')
+    .select('*')
+    .eq('id', response.report_id)
+    .single()
+  return {
+    data: data as ConditionReport | null,
+    error: readError?.message ?? null,
+    incident_id: typeof response.incident_id === 'string' ? response.incident_id : null,
+  }
+}
+
+export async function uploadConditionEvidence(reportId: string, bookingId: string, file: File) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+  if (!allowedTypes.includes(file.type) || file.size < 1 || file.size > 10 * 1024 * 1024) {
+    return { data: null, error: 'Evidence must be a JPEG, PNG, or WebP image up to 10 MB.' }
+  }
+  const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, '_').slice(-120) || 'evidence'
+  const path = `${bookingId}/${crypto.randomUUID()}-${safeName}`
+  const { error: uploadError } = await supabase.storage
+    .from('condition-evidence')
+    .upload(path, file, { contentType: file.type, upsert: false })
+  if (uploadError) return { data: null, error: uploadError.message }
+
+  const { data, error } = await supabase.rpc('register_condition_evidence', {
+    _report_id: reportId,
+    _storage_path: path,
+    _mime_type: file.type,
+    _file_size_bytes: file.size,
+  })
+  const result = data as RpcResult | null
+  if (error || !result?.success) {
+    await supabase.storage.from('condition-evidence').remove([path])
+    return { data: null, error: error?.message ?? result?.error ?? 'Could not attach evidence metadata' }
+  }
+  return { data: result, error: null }
 }
 
 export async function getConditionReports(bookingId: string) {

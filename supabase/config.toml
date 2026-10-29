@@ -10,7 +10,7 @@
 
 [api]
 # Local REST API port (default: 54321)
-port = 54321
+port = 55321
 # Schemas exposed through the REST API
 schemas = ["public", "graphql_public"]
 # Extra schemas visible to the anon and service_role
@@ -19,20 +19,20 @@ max_rows = 1000
 
 [db]
 # Local Postgres port (default: 54322)
-port = 54322
+port = 55322
 # Target Postgres major version — match your Supabase project's version
 major_version = 15
 
 [studio]
 # Supabase Studio (local dashboard) port (default: 54323)
-port = 54323
+port = 55323
 api_url = "http://localhost"
 
 [inbucket]
 # Local email testing server (default: 54324)
-port = 54324
-smtp_port = 54325
-pop3_port = 54326
+port = 55324
+smtp_port = 55325
+pop3_port = 55326
 
 [storage]
 # Maximum file upload size (examples: "5MB", "10MB")
@@ -55,3 +55,7 @@ enable_confirmations = false
 # ── Remote project (fill in after `supabase link`) ───────────────────────────
 # [project]
 # project_id = "your-project-ref-goes-here"
+
+[analytics]
+enabled = true
+port = 55327

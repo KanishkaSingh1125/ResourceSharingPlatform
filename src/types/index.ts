@@ -225,6 +225,49 @@ export interface ResourceSearchFilters {
   sortOrder?: 'asc' | 'desc'
 }
 
+export interface ResourceMatchInput {
+  starts_at: string
+  ends_at: string
+  minimum_capacity?: number
+  location?: string
+  resource_type?: ResourceType
+  maximum_cost?: number
+  limit?: number
+}
+
+export interface ResourceMatchResult {
+  resource_id: string
+  name: string
+  location: string | null
+  resource_type: ResourceType
+  capacity: number | null
+  matches: boolean
+  reasons: string[]
+}
+
+export interface ResourceUtilization {
+  success: boolean
+  error?: string
+  resource_id: string
+  from: string
+  to: string
+  availability_schedule_configured: boolean
+  available_minutes: number
+  capacity: number
+  booked_minutes: number
+  booked_utilization: number | null
+  actual_usage_minutes: number
+  actual_utilization: number | null
+  completed_usage_samples: number
+  reservation_count: number
+  cancellation_count: number
+  waitlist_demand_users: number
+  enough_usage_data: boolean
+  underused: boolean | null
+  demand_pattern_available: boolean
+  maintenance_and_safety_holds_excluded: boolean
+}
+
 // ── Availability & Maintenance ───────────────────────────────────────────────
 
 export interface AvailabilityWindow {
@@ -290,8 +333,69 @@ export interface UserCredential {
   expires_at: string | null
   verified: boolean
   verified_by: string | null
+  verified_at: string | null
+  verification_source: CredentialVerificationSource | null
+  verification_reason: string | null
   document_url: string | null
   created_at: string
+}
+
+export type CredentialVerificationSource =
+  | 'issuer_confirmation'
+  | 'document_review'
+  | 'organisation_training'
+
+export interface CredentialVerificationHistory {
+  id: string
+  credential_id: string
+  subject_user_id: string
+  actor_id: string | null
+  previous_verified: boolean
+  new_verified: boolean
+  verification_source: CredentialVerificationSource | 'legacy_recheck' | null
+  reason: string
+  changed_at: string
+}
+
+export type CredentialShareAttribute =
+  | 'credential_type'
+  | 'credential_name'
+  | 'issued_at'
+  | 'expires_at'
+  | 'verified'
+
+export interface CredentialShareConsent {
+  id: string
+  subject_user_id: string
+  recipient_org_id: string
+  purpose: string
+  allowed_attributes: CredentialShareAttribute[]
+  granted_at: string
+  expires_at: string
+  revoked_at: string | null
+}
+
+export type RecipientCredentialShareConsent = Omit<CredentialShareConsent, 'subject_user_id'>
+
+export interface CredentialShareConsentHistory {
+  id: string
+  consent_id: string
+  subject_user_id: string
+  recipient_org_id: string
+  actor_id: string | null
+  action: 'granted' | 'revoked'
+  purpose: string
+  allowed_attributes: CredentialShareAttribute[]
+  expires_at: string
+  occurred_at: string
+}
+
+export interface ConsentedCredential {
+  credential_type: string
+  credential_name: string | null
+  issued_at: string | null
+  expires_at: string | null
+  verified: boolean | null
 }
 
 // ── Bookings ─────────────────────────────────────────────────────────────────
@@ -366,6 +470,13 @@ export interface WaitingListEntry {
   ends_at: string
   priority: number
   created_at: string
+  status: 'waiting' | 'offered' | 'claimed' | 'expired' | 'withdrawn'
+  offer_expires_at: string | null
+  allocation_score: number
+  policy_version: string
+  allocation_reason: Record<string, unknown>
+  acted_at: string | null
+  resources?: Pick<Resource, 'name' | 'location'>
 }
 
 // ── Check-in / Check-out ─────────────────────────────────────────────────────
@@ -394,8 +505,32 @@ export interface ConditionReport {
   condition: ConditionRating
   description: string
   image_urls: string[]
+  checklist: Record<string, unknown>
+  damage_flag: boolean
+  report_version: number
   reported_by: string
   reported_at: string
+}
+
+export interface ConditionChecklistItem {
+  id: string
+  resource_id: string
+  item_key: string
+  label: string
+  required: boolean
+  is_active: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface ConditionReportInput {
+  booking_id: string
+  resource_id: string
+  report_type: ReportType
+  condition: ConditionRating
+  description?: string
+  checklist?: Record<string, unknown>
+  damage_flag?: boolean
 }
 
 // ── Incidents ────────────────────────────────────────────────────────────────
@@ -415,8 +550,34 @@ export interface Incident {
   resolution: string | null
   resolved_by: string | null
   resolved_at: string | null
+  assigned_to: string | null
+  assigned_by: string | null
+  condition_report_id: string | null
   created_at: string
   updated_at: string
+}
+
+export interface IncidentHistoryEntry {
+  id: string
+  incident_id: string
+  actor_id: string
+  action: 'reported' | 'assigned' | 'status_changed' | 'resolved' | 'closed'
+  previous_status: IncidentStatus | null
+  new_status: IncidentStatus | null
+  reason: string
+  created_at: string
+}
+
+export interface SafetyHold {
+  id: string
+  resource_id: string
+  reason: string
+  placed_by: string
+  placed_at: string
+  expires_at: string | null
+  released_by: string | null
+  released_at: string | null
+  release_reason: string | null
 }
 
 // ── Notifications ────────────────────────────────────────────────────────────
@@ -443,6 +604,33 @@ export interface Notification {
   metadata: Record<string, unknown>
   is_read: boolean
   created_at: string
+}
+
+export interface NotificationPreferences {
+  user_id: string
+  enabled_types: NotificationType[]
+  updated_at: string
+}
+
+export interface OrgSharingAnalytics {
+  success: boolean
+  error?: string
+  organisation_id: string
+  from: string
+  to: string
+  resource_count: number
+  published_resource_count: number
+  booking_count: number
+  completed_booking_count: number
+  cancelled_booking_count: number
+  verified_usage_booking_count: number
+  available_minutes: number
+  booked_minutes: number
+  actual_usage_minutes: number
+  booked_utilization: number | null
+  actual_utilization: number | null
+  usage_is_measured: boolean
+  estimated_savings: null
 }
 
 // ── Audit Log ────────────────────────────────────────────────────────────────

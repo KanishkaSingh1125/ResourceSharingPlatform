@@ -18,6 +18,7 @@ import type {
   VerificationStatus,
   RpcResult,
   PaginatedResponse,
+  OrgSharingAnalytics,
 } from '@/types'
 
 // ── Organisation CRUD ────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ export async function listOrganisations(opts: {
   status?: VerificationStatus
   page?: number
   pageSize?: number
-} = {}): Promise<PaginatedResponse<Organisation>> {
+} = {}): Promise<PaginatedResponse<Organisation> & { error: string | null }> {
   const page = opts.page ?? 1
   const pageSize = opts.pageSize ?? 20
   const from = (page - 1) * pageSize
@@ -88,7 +89,7 @@ export async function listOrganisations(opts: {
     query = query.eq('verification_status', opts.status)
   }
 
-  const { data, count } = await query
+  const { data, count, error } = await query
 
   return {
     data: (data ?? []) as Organisation[],
@@ -96,6 +97,7 @@ export async function listOrganisations(opts: {
     page,
     pageSize,
     hasMore: (count ?? 0) > page * pageSize,
+    error: error?.message ?? null,
   }
 }
 
@@ -123,7 +125,7 @@ export async function getMyOrganisations() {
 export async function getOrgMembers(orgId: string) {
   const { data, error } = await supabase
     .from('org_members')
-    .select('*, profiles(display_name, email, avatar_url)')
+    .select('*, profiles!user_id(display_name, email, avatar_url)')
     .eq('org_id', orgId)
     .order('joined_at')
 
@@ -199,6 +201,18 @@ export async function getVerificationHistory(orgId: string) {
     .order('decided_at', { ascending: false })
 
   return { data: (data ?? []) as VerificationDecision[], error: error?.message ?? null }
+}
+
+export async function getOrgSharingAnalytics(orgId: string, from: string, to: string) {
+  const { data, error } = await supabase.rpc('get_org_sharing_analytics', {
+    _org_id: orgId,
+    _from: from,
+    _to: to,
+  })
+  if (error) return { data: null, error: error.message }
+  const result = data as OrgSharingAnalytics
+  if (!result.success) return { data: null, error: result.error ?? 'Could not load organisation analytics' }
+  return { data: result, error: null }
 }
 
 // ── Verification Documents ───────────────────────────────────────────────────

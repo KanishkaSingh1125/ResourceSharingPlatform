@@ -4,4 +4,6 @@ export { OrgBookingsPage } from './OrgBookingsPage'
 export { OrgMembersPage } from './OrgMembersPage'
 export { OrgAnalyticsPage } from './OrgAnalyticsPage'
 export { OrgSettingsPage } from './OrgSettingsPage'
-
+export { OrgSharedCredentialsPage } from './OrgSharedCredentialsPage'
+export { OrgIncidentsPage } from './OrgIncidentsPage'
+export { OrgCheckinPage } from './OrgCheckinPage'

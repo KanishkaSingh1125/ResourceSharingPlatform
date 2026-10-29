@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   ShieldCheck,
   Building2,
@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { useState } from 'react'
+import { useAuth } from '@/lib/AuthContext'
 
 const sidebarLinks = [
   { to: '/admin', icon: ShieldCheck, label: 'Admin Home' },
@@ -23,11 +24,20 @@ const sidebarLinks = [
 
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { signOut } = useAuth()
+  const navigate = useNavigate()
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div className="flex min-h-screen">
       {sidebarOpen && (
-        <div
+        <button
+          type="button"
+          aria-label="Close navigation"
           className="fixed inset-0 z-30 bg-black/30 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
@@ -63,6 +73,7 @@ export function AdminLayout() {
               key={to}
               to={to}
               end={to === '/admin'}
+              onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   isActive
@@ -80,6 +91,7 @@ export function AdminLayout() {
         <div className="border-t border-neutral-200 p-3">
           <button
             type="button"
+            onClick={handleSignOut}
             className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
           >
             <LogOut className="h-4 w-4" />
@@ -94,6 +106,7 @@ export function AdminLayout() {
             type="button"
             onClick={() => setSidebarOpen(true)}
             aria-label="Open sidebar"
+            aria-expanded={sidebarOpen}
           >
             <Menu className="h-5 w-5 text-neutral-500" />
           </button>
@@ -107,4 +120,3 @@ export function AdminLayout() {
     </div>
   )
 }
-

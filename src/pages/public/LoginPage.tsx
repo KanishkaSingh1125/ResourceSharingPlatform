@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Eye, EyeOff, LogIn } from 'lucide-react'
 import { useAuth } from '@/lib/AuthContext'
@@ -15,12 +15,13 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Redirect authenticated users away from login
-  if (!authLoading && user) {
-    const redirectTo = getValidRedirect(searchParams.get('redirect'))
-    navigate(redirectTo, { replace: true })
-    return null
-  }
+  const redirectTo = getValidRedirect(searchParams.get('redirect'))
+
+  useEffect(() => {
+    if (!authLoading && user) navigate(redirectTo, { replace: true })
+  }, [authLoading, navigate, redirectTo, user])
+
+  if (!authLoading && user) return null
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -46,7 +47,6 @@ export function LoginPage() {
     }
 
     // Successful login — redirect
-    const redirectTo = getValidRedirect(searchParams.get('redirect'))
     navigate(redirectTo, { replace: true })
   }
 

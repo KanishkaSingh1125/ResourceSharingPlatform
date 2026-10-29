@@ -1,18 +1,8 @@
--- 20261028000003_fix_notifications_audit_policies.sql
--- Corrective migration to restrict INSERT on notifications and audit_log to service_role only
 
--- ── NOTIFICATIONS INSERT POLICY FIX ──
-DROP POLICY IF EXISTS "System can insert notifications" ON public.notifications;
-CREATE POLICY "System can insert notifications" ON public.notifications
-  FOR INSERT TO authenticated
-  USING (auth.role() = 'service_role')
-  WITH CHECK (auth.role() = 'service_role');
+-- Corrective migration for notifications and audit_log policies
 
--- ── AUDIT LOG INSERT POLICY FIX ──
-DROP POLICY IF EXISTS "System can insert audit entries" ON public.audit_log;
-CREATE POLICY "System can insert audit entries" ON public.audit_log
-  FOR INSERT TO authenticated
-  USING (auth.role() = 'service_role')
-  WITH CHECK (auth.role() = 'service_role');
+DROP POLICY IF EXISTS "System can insert notifications"
+  ON public.notifications;
 
--- Note: Existing SELECT policies remain unchanged.
+DROP POLICY IF EXISTS "System can insert audit entries"
+  ON public.audit_log;

@@ -9,5 +9,13 @@ export {
   deleteEligibilityRule,
   getMyCredentials,
   addCredential,
+  reviewCredential,
+  getCredentialVerificationHistory,
+  getMyCredentialShareConsents,
+  getCredentialShareConsentsForOrganisation,
+  getCredentialShareConsentHistory,
+  grantCredentialShareConsent,
+  revokeCredentialShareConsent,
+  getConsentedCredentials,
   computeFairShareScore,
 } from './eligibilityService'

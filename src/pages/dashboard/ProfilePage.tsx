@@ -9,16 +9,12 @@ import { formatDate } from '@/lib/utils'
 export function ProfilePage() {
   const { user, profile, refreshProfile, loading: authLoading } = useAuth()
 
-  const [displayName, setDisplayName] = useState(profile?.display_name ?? '')
+  const [editedName, setEditedName] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
 
-  // Keep local state in sync with profile changes
-  const currentName = profile?.display_name ?? ''
-  if (displayName === '' && currentName && displayName !== currentName) {
-    setDisplayName(currentName)
-  }
+  const displayName = editedName ?? profile?.display_name ?? ''
 
   if (authLoading) {
     return <LoadingSpinner fullPage label="Loading profile…" />
@@ -61,6 +57,7 @@ export function ProfilePage() {
 
     setSaveSuccess(true)
     await refreshProfile()
+    setEditedName(null)
     setTimeout(() => setSaveSuccess(false), 3000)
   }
 
@@ -97,7 +94,8 @@ export function ProfilePage() {
                 id="profile-name"
                 type="text"
                 value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                maxLength={160}
+                onChange={(e) => setEditedName(e.target.value)}
                 disabled={saving}
                 className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50"
               />

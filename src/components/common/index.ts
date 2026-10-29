@@ -6,4 +6,4 @@
 
 export { LoadingSpinner } from './LoadingSpinner'
 export { ProtectedRoute } from './ProtectedRoute'
-
+export { PlatformAdminRoute } from './PlatformAdminRoute'

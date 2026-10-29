@@ -15,6 +15,7 @@ export {
   removeMember,
   transitionVerificationStatus,
   getVerificationHistory,
+  getOrgSharingAnalytics,
   uploadVerificationDocument,
   getVerificationDocuments,
   deleteVerificationDocument,

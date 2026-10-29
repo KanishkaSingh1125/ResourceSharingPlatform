@@ -4,4 +4,7 @@ export { MyBookingsPage } from './MyBookingsPage'
 export { NotificationsPage } from './NotificationsPage'
 export { UserSettingsPage } from './UserSettingsPage'
 export { ProfilePage } from './ProfilePage'
-
+export { TrustPassportPage } from './TrustPassportPage'
+export { ActivityPage } from './ActivityPage'
+export { SafetyPage } from './SafetyPage'
+export { BookingFollowup } from './BookingFollowup'

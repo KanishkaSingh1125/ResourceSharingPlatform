@@ -114,14 +114,14 @@ export function PublicLayout() {
               &copy; {CURRENT_YEAR} ShareSphere. Built for hackathon.
             </p>
             <div className="flex gap-6">
-              <Link to="/about" className="text-sm text-neutral-500 hover:text-neutral-700">
-                About
+              <Link to="/explore" className="text-sm text-neutral-500 hover:text-neutral-700">
+                Explore
               </Link>
-              <Link to="/privacy" className="text-sm text-neutral-500 hover:text-neutral-700">
-                Privacy
+              <Link to="/join" className="text-sm text-neutral-500 hover:text-neutral-700">
+                Join
               </Link>
-              <Link to="/terms" className="text-sm text-neutral-500 hover:text-neutral-700">
-                Terms
+              <Link to="/register-org" className="text-sm text-neutral-500 hover:text-neutral-700">
+                Register an organisation
               </Link>
             </div>
           </div>
@@ -130,4 +130,3 @@ export function PublicLayout() {
     </div>
   )
 }
-

@@ -5,7 +5,7 @@
  */
 
 import { supabase } from '@/lib/supabase'
-import type { Incident, IncidentSeverity, IncidentStatus } from '@/types'
+import type { Incident, IncidentHistoryEntry, IncidentSeverity, IncidentStatus, RpcResult, SafetyHold } from '@/types'
 
 export async function reportIncident(input: {
   resource_id: string
@@ -14,36 +14,19 @@ export async function reportIncident(input: {
   title: string
   description: string
 }) {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { data: null, error: 'Not authenticated' }
-
-  const { data, error } = await supabase
-    .from('incidents')
-    .insert({ ...input, reported_by: user.id })
-    .select()
-    .single()
-
-  if (data) {
-    // Create notification for org managers
-    await supabase.from('notifications').insert({
-      user_id: user.id,  // Will be replaced with org manager IDs in production
-      type: 'incident_reported',
-      title: `Incident: ${input.title}`,
-      body: `Severity: ${input.severity}. ${input.description.substring(0, 100)}`,
-      metadata: { incident_id: data.id, resource_id: input.resource_id },
-    })
-
-    // Audit
-    await supabase.from('audit_log').insert({
-      actor_id: user.id,
-      action: 'incident_reported',
-      entity_type: 'incident',
-      entity_id: data.id,
-      metadata: { severity: input.severity, resource_id: input.resource_id },
-    })
+  const { data: result, error } = await supabase.rpc('report_incident', {
+    _resource_id: input.resource_id,
+    _booking_id: input.booking_id ?? null,
+    _severity: input.severity,
+    _title: input.title,
+    _description: input.description,
+  })
+  if (error) return { data: null, error: error.message }
+  const response = result as RpcResult
+  if (!response.success || typeof response.incident_id !== 'string') {
+    return { data: null, error: response.error ?? 'Incident report failed' }
   }
-
-  return { data: data as Incident | null, error: error?.message ?? null }
+  return getIncident(response.incident_id)
 }
 
 export async function updateIncidentStatus(
@@ -51,34 +34,110 @@ export async function updateIncidentStatus(
   status: IncidentStatus,
   resolution?: string
 ) {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { data: null, error: 'Not authenticated' }
+  const { data: result, error } = await supabase.rpc('transition_incident', {
+    _incident_id: incidentId,
+    _new_status: status,
+    _reason: resolution ?? '',
+    _assignee_id: null,
+  })
+  if (error) return { data: null, error: error.message }
+  const response = result as RpcResult
+  if (!response.success) return { data: null, error: response.error ?? 'Incident update failed' }
+  return getIncident(incidentId)
+}
 
-  const updates: Record<string, unknown> = { status }
-  if (status === 'resolved' || status === 'closed') {
-    updates.resolved_by = user.id
-    updates.resolved_at = new Date().toISOString()
-    if (resolution) updates.resolution = resolution
+export async function assignIncident(incidentId: string, assigneeId: string, reason = '') {
+  const { data, error } = await supabase.rpc('transition_incident', {
+    _incident_id: incidentId,
+    _new_status: 'investigating',
+    _reason: reason,
+    _assignee_id: assigneeId,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
+export async function addIncidentEvidence(input: {
+  incident_id: string
+  storage_path: string
+  mime_type: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf'
+  file_size_bytes: number
+}) {
+  const { data, error } = await supabase.rpc('add_incident_evidence', {
+    _incident_id: input.incident_id,
+    _storage_path: input.storage_path,
+    _mime_type: input.mime_type,
+    _file_size_bytes: input.file_size_bytes,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
+export async function uploadIncidentEvidence(incidentId: string, file: File) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+  if (!allowedTypes.includes(file.type) || file.size < 1 || file.size > 10 * 1024 * 1024) {
+    return { data: null, error: 'Evidence must be an image or PDF up to 10 MB.' }
   }
+  const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, '_').slice(-120) || 'evidence'
+  const path = `incidents/${incidentId}/${crypto.randomUUID()}-${safeName}`
+  const { error: uploadError } = await supabase.storage
+    .from('incident-evidence')
+    .upload(path, file, { contentType: file.type, upsert: false })
+  if (uploadError) return { data: null, error: uploadError.message }
 
+  const { data, error } = await supabase.rpc('add_incident_evidence', {
+    _incident_id: incidentId,
+    _storage_path: path,
+    _mime_type: file.type,
+    _file_size_bytes: file.size,
+  })
+  const result = data as RpcResult | null
+  if (error || !result?.success) {
+    await supabase.storage.from('incident-evidence').remove([path])
+    return { data: null, error: error?.message ?? result?.error ?? 'Could not attach evidence metadata' }
+  }
+  return { data: result, error: null }
+}
+
+export async function placeSafetyHold(input: {
+  resource_id: string
+  reason: string
+  expires_at?: string
+}) {
+  const { data, error } = await supabase.rpc('place_resource_safety_hold', {
+    _resource_id: input.resource_id,
+    _reason: input.reason,
+    _expires_at: input.expires_at ?? null,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
+export async function releaseSafetyHold(holdId: string, reason: string) {
+  const { data, error } = await supabase.rpc('release_resource_safety_hold', {
+    _hold_id: holdId,
+    _reason: reason,
+  })
+  if (error) return { success: false, error: error.message } as RpcResult
+  return data as RpcResult
+}
+
+export async function getSafetyHolds(resourceId: string) {
   const { data, error } = await supabase
-    .from('incidents')
-    .update(updates)
-    .eq('id', incidentId)
-    .select()
-    .single()
+    .from('resource_safety_holds')
+    .select('*')
+    .eq('resource_id', resourceId)
+    .order('placed_at', { ascending: false })
+  return { data: (data ?? []) as SafetyHold[], error: error?.message ?? null }
+}
 
-  if (data) {
-    await supabase.from('audit_log').insert({
-      actor_id: user.id,
-      action: 'incident_status_change',
-      entity_type: 'incident',
-      entity_id: incidentId,
-      metadata: { new_status: status },
-    })
-  }
-
-  return { data: data as Incident | null, error: error?.message ?? null }
+export async function getIncidentHistory(incidentId: string) {
+  const { data, error } = await supabase
+    .from('incident_history')
+    .select('*')
+    .eq('incident_id', incidentId)
+    .order('created_at')
+  return { data: (data ?? []) as IncidentHistoryEntry[], error: error?.message ?? null }
 }
 
 export async function getResourceIncidents(resourceId: string) {

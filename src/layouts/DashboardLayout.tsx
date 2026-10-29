@@ -9,23 +9,45 @@ import {
   Menu,
   X,
   UserCircle,
+  Shield,
+  History,
+  ShieldAlert,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@/lib/AuthContext'
+import { getMyUnreadNotificationCount, NOTIFICATIONS_UPDATED_EVENT } from '@/lib/notificationService'
 
 const sidebarLinks = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Overview' },
   { to: '/dashboard/discover', icon: Search, label: 'Discover' },
   { to: '/dashboard/bookings', icon: CalendarDays, label: 'My Bookings' },
   { to: '/dashboard/notifications', icon: Bell, label: 'Notifications' },
+  { to: '/dashboard/trust', icon: Shield, label: 'Trust Passport' },
+  { to: '/dashboard/activity', icon: History, label: 'Activity history' },
+  { to: '/dashboard/safety', icon: ShieldAlert, label: 'Safety report' },
   { to: '/dashboard/profile', icon: UserCircle, label: 'Profile' },
   { to: '/dashboard/settings', icon: Settings, label: 'Settings' },
 ] as const
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const { signOut, profile } = useAuth()
+  const [unreadCount, setUnreadCount] = useState<number | null>(null)
+  const { signOut, profile, user } = useAuth()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    let active = true
+    const refresh = async () => {
+      const result = await getMyUnreadNotificationCount()
+      if (active) setUnreadCount(result.count)
+    }
+    void refresh()
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, refresh)
+    return () => {
+      active = false
+      window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, refresh)
+    }
+  }, [user?.id])
 
   async function handleSignOut() {
     await signOut()
@@ -36,7 +58,9 @@ export function DashboardLayout() {
     <div className="flex min-h-screen">
       {/* Mobile overlay */}
       {sidebarOpen && (
-        <div
+        <button
+          type="button"
+          aria-label="Close navigation"
           className="fixed inset-0 z-30 bg-black/30 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
@@ -85,6 +109,7 @@ export function DashboardLayout() {
               key={to}
               to={to}
               end={to === '/dashboard'}
+              onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   isActive
@@ -95,6 +120,11 @@ export function DashboardLayout() {
             >
               <Icon className="h-4 w-4" />
               {label}
+              {to === '/dashboard/notifications' && unreadCount !== null && unreadCount > 0 && (
+                <span className="ml-auto rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-700" aria-label={`${unreadCount} unread`}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -120,6 +150,7 @@ export function DashboardLayout() {
             type="button"
             onClick={() => setSidebarOpen(true)}
             aria-label="Open sidebar"
+            aria-expanded={sidebarOpen}
           >
             <Menu className="h-5 w-5 text-neutral-500" />
           </button>
@@ -133,5 +164,3 @@ export function DashboardLayout() {
     </div>
   )
 }
-
-
